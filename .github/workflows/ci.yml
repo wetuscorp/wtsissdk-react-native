@@ -1,0 +1,54 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with: { node-version: '24', cache: npm }
+      - run: npm ci
+      - run: npm run contracts:verify
+      - run: npm run typecheck
+      - run: npm test -- --runInBand
+      - run: npm run build
+      - run: npm run pack:check
+      - run: npx react-native codegen --path . --platform all --outputPath generated
+  android-example:
+    strategy:
+      fail-fast: false
+      matrix:
+        react-native: ['0.85.3', '0.86.0']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          repository: wetuscorp/wtsissdk-android
+          path: native-android
+      - uses: actions/setup-node@v6
+        with: { node-version: '24', cache: npm, cache-dependency-path: example/package-lock.json }
+      - uses: actions/setup-java@v5
+        with: { distribution: temurin, java-version: '17' }
+      - run: cd native-android && ./gradlew :sdk:publishToMavenLocal
+      - run: npm ci && cd example && npm install && npm install --no-save react-native@${{ matrix.react-native }} && cd android && ./gradlew assembleDebug
+  ios-example:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          repository: wetuscorp/wtsissdk-swift
+          path: native-swift
+      - uses: actions/setup-node@v6
+        with: { node-version: '24', cache: npm }
+      - run: npm ci && cd example && npm install
+      - run: cd example/ios && pod install
+        env:
+          WTS_SDK_SWIFT_PATH: ${{ github.workspace }}/native-swift
+      - run: xcodebuild -workspace example/ios/WtsSdkExample.xcworkspace -scheme WtsSdkExample -sdk iphonesimulator -configuration Debug -derivedDataPath /tmp/wts-rn-derived CODE_SIGNING_ALLOWED=NO build

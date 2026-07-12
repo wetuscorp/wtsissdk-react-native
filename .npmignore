@@ -1,0 +1,11 @@
+.github/
+contracts/
+scripts/
+tests/
+example/
+android/.gradle/
+android/build/
+ios/build/
+generated/
+coverage/
+*.tgz

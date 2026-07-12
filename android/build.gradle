@@ -1,0 +1,20 @@
+buildscript { repositories { google(); mavenCentral() }; dependencies { classpath 'com.android.tools.build:gradle:8.10.1'; classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.0' } }
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'com.facebook.react'
+android {
+    namespace 'co.wetus.sdk.reactnative'
+    compileSdk 36
+    defaultConfig { minSdk 23 }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+kotlin { jvmToolchain(17) }
+react {
+    libraryName = 'WtsSdkSpec'
+    codegenJavaPackageName = 'co.wetus.sdk.reactnative'
+}
+repositories { google(); mavenLocal(); mavenCentral() }
+dependencies { implementation 'com.facebook.react:react-android'; implementation 'co.wetus:wts-sdk-android:0.1.0-alpha.1'; implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2' }
