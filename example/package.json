@@ -10,7 +10,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "@wetus/wts-sdk-react-native": "file:..",
+    "@wetusco/wts-sdk-react-native": "file:..",
     "react": "19.2.3",
     "react-native": "0.86.0",
     "@react-native/new-app-screen": "0.86.0",

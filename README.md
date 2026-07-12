@@ -1,4 +1,4 @@
-# @wetus/wts-sdk-react-native
+# @wetusco/wts-sdk-react-native
 
 Official React Native New Architecture wrapper for the wts.is native SDKs. A TypeScript TurboModule spec is implemented by Codegen-backed Swift/ObjC++ and Kotlin modules; the JavaScript layer does not duplicate networking or attribution logic.
 
@@ -7,7 +7,7 @@ Official React Native New Architecture wrapper for the wts.is native SDKs. A Typ
 ## Install
 
 ```bash
-npm install @wetus/wts-sdk-react-native@0.1.0-alpha.1
+npm install @wetusco/wts-sdk-react-native@0.1.0-alpha.1
 cd ios && bundle exec pod install
 ```
 
@@ -15,7 +15,7 @@ cd ios && bundle exec pod install
 
 ```tsx
 import { Linking } from 'react-native';
-import { WtsSdk } from '@wetus/wts-sdk-react-native';
+import { WtsSdk } from '@wetusco/wts-sdk-react-native';
 
 await WtsSdk.configure('YOUR_PUBLIC_APP_KEY');
 

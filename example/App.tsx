@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Linking, SafeAreaView, StyleSheet, Text } from 'react-native';
-import { WtsSdk } from '@wetus/wts-sdk-react-native';
+import { WtsSdk } from '@wetusco/wts-sdk-react-native';
 
 const allowedRoutes = new Set(['/home', '/products/detail']);
 

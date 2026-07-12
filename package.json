@@ -1,5 +1,5 @@
 {
-  "name": "@wetus/wts-sdk-react-native",
+  "name": "@wetusco/wts-sdk-react-native",
   "version": "0.1.0-alpha.1",
   "description": "Official wts.is deep-link and attribution SDK for React Native",
   "license": "Apache-2.0",
