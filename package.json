@@ -6,7 +6,7 @@
   "homepage": "https://wts.is",
   "repository": {
     "type": "git",
-    "url": "https://github.com/wetuscorp/wtsissdk-react-native.git"
+    "url": "git+https://github.com/wetuscorp/wtsissdk-react-native.git"
   },
   "source": "src/index.ts",
   "files": [
@@ -48,7 +48,6 @@
   },
   "publishConfig": {
     "access": "public",
-    "provenance": true,
     "tag": "next"
   },
   "jest": {
