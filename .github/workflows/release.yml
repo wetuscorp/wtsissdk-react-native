@@ -15,6 +15,19 @@ jobs:
         with: { node-version: '24', registry-url: 'https://registry.npmjs.org', cache: npm }
       - run: test "$GITHUB_REF_NAME" = "$(node -p 'require("./package.json").version')"
       - run: npm ci && npm run contracts:verify && npm run typecheck && npm test -- --runInBand && npm run build && npm run pack:check
-      - run: npm publish --access public --tag next --provenance
-      - run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+      - name: Check npm registry
+        id: npm_registry
+        env:
+          PACKAGE_NAME: '@wetusco/wts-sdk-react-native'
+          PACKAGE_VERSION: ${{ github.ref_name }}
+        run: |
+          if test "$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version 2>/dev/null || true)" = "${PACKAGE_VERSION}"; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.npm_registry.outputs.published != 'true'
+        run: npm publish --access public --tag next --provenance
+      - name: Create GitHub release
+        run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
         env: { GH_TOKEN: "${{ github.token }}" }
