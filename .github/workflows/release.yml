@@ -18,7 +18,7 @@ jobs:
       - name: Check npm registry
         id: npm_registry
         env:
-          PACKAGE_NAME: '@wetusco/wts-sdk-react-native'
+          PACKAGE_NAME: '@wetusco/wts-sdk'
           PACKAGE_VERSION: ${{ github.ref_name }}
         run: |
           if test "$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version 2>/dev/null || true)" = "${PACKAGE_VERSION}"; then
