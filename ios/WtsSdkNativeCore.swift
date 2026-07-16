@@ -16,7 +16,7 @@ public final class WtsSdkNativeCore: NSObject {
                 if let apiBaseUrl, let url = URL(string: apiBaseUrl) { options.apiBaseURL = url }
                 try await WtsSDK.shared.configure(appKey: appKey, options: options)
                 resolve(nil)
-            } catch { reject("wts_sdk", error.localizedDescription, error) }
+            } catch { rejectWts(error, reject) }
         }
     }
 
@@ -29,7 +29,7 @@ public final class WtsSdkNativeCore: NSObject {
             do {
                 guard let url = URL(string: url) else { throw WtsSDKError.invalidURL(fallbackURL: nil) }
                 resolve(try await WtsSDK.shared.handle(url: url).dictionary)
-            } catch { reject("wts_sdk", error.localizedDescription, error) }
+            } catch { rejectWts(error, reject) }
         }
     }
 
@@ -49,7 +49,7 @@ public final class WtsSdkNativeCore: NSObject {
             do {
                 try await WtsSDK.shared.setProfileConsent(granted ? .granted : .denied)
                 resolve(nil)
-            } catch { reject("wts_sdk", error.localizedDescription, error) }
+            } catch { rejectWts(error, reject) }
         }
     }
 
@@ -66,7 +66,7 @@ public final class WtsSdkNativeCore: NSObject {
                     attributes: try attributes.mapValues(WtsUserValue.init(nativeValue:))
                 )
                 resolve(nil)
-            } catch { reject("wts_sdk", error.localizedDescription, error) }
+            } catch { rejectWts(error, reject) }
         }
     }
 
@@ -89,7 +89,7 @@ public final class WtsSdkNativeCore: NSObject {
                     )
                 )
                 resolve(nil)
-            } catch { reject("wts_sdk", error.localizedDescription, error) }
+            } catch { rejectWts(error, reject) }
         }
     }
 
@@ -112,7 +112,7 @@ public final class WtsSdkNativeCore: NSObject {
                     )
                 )
                 resolve(nil)
-            } catch { reject("wts_sdk", error.localizedDescription, error) }
+            } catch { rejectWts(error, reject) }
         }
     }
 
@@ -124,7 +124,7 @@ public final class WtsSdkNativeCore: NSObject {
             do {
                 try await WtsSDK.shared.resetIdentity()
                 resolve(nil)
-            } catch { reject("wts_sdk", error.localizedDescription, error) }
+            } catch { rejectWts(error, reject) }
         }
     }
 
@@ -146,13 +146,21 @@ public final class WtsSdkNativeCore: NSObject {
                     linkId: linkId
                 )
                 resolve(nil)
-            } catch { reject("wts_sdk", error.localizedDescription, error) }
+            } catch { rejectWts(error, reject) }
         }
     }
 
     public func flush(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
         Task { await WtsSDK.shared.flush(); resolve(nil) }
     }
+}
+
+private func rejectWts(_ error: Error, _ reject: RCTPromiseRejectBlock) {
+    guard let error = error as? WtsSDKError else {
+        reject("NATIVE_ERROR", error.localizedDescription, error)
+        return
+    }
+    reject(error.code, error.localizedDescription, error)
 }
 
 private extension WtsDeepLink {

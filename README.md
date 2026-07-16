@@ -48,7 +48,7 @@ Event scalar types and decimal revenue strings cross the bridge without coercion
 
 ## User identity and reported attribution
 
-Profile operations require an explicit consent decision from the host application. Use your own stable, opaque customer ID rather than an email address as `externalUserId`.
+Profile operations require an explicit consent decision from the host application. Use your own stable, opaque customer ID rather than an email address as `externalUserId`; the value is case-sensitive and is not trimmed or normalized.
 
 ```tsx
 await WtsSdk.setProfileConsent(true);
@@ -73,6 +73,9 @@ await WtsSdk.setReportedAttribution({
 });
 ```
 
-Call `resetIdentity()` on logout. It removes the current profile binding, rotates the anonymous/session context and preserves the native installation identity. Identity mutations are persisted by the native SDKs and flushed before events.
+Call `resetIdentity()` on logout. It removes the current profile binding, rotates the anonymous/session context and preserves the native installation identity. Setting profile consent to `false` also queues a server-side binding reset while anonymous analytics remains available. Identity mutations are persisted by the native SDKs and flushed before events.
 
-See the `example`, [security policy](SECURITY.md), and [support policy](SUPPORT.md). Full documentation: https://wts.is/docs/sdk/react-native
+See the `example`, [security policy](SECURITY.md), and [support policy](SUPPORT.md). Full documentation: https://wts.is/en/resources/docs/sdk-react-native
+
+Native failures reject with `WtsSdkError` and stable codes such as `TIMEOUT`,
+`NO_MATCH`, and `PROFILE_CONSENT_REQUIRED`.

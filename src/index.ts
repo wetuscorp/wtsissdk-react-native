@@ -29,6 +29,18 @@ export class WtsSdkError extends Error {
   }
 }
 
+function wrapNativePromise<T>(promise: Promise<T>, fallbackUrl?: string): Promise<T> {
+  return promise.catch((error: unknown) => {
+    if (error instanceof WtsSdkError) throw error;
+    const native = error as { code?: string; message?: string };
+    throw new WtsSdkError(
+      native.code ?? "NATIVE_ERROR",
+      native.message ?? "Native SDK error.",
+      fallbackUrl,
+    );
+  });
+}
+
 function validateEvent(
   eventKey: string,
   properties: Record<string, WtsScalar>,
@@ -126,47 +138,47 @@ function validateUserUpdate(update: WtsUserUpdate) {
 export const WtsSdk = {
   configure(appKey: string, apiBaseUrl?: string) {
     if (appKey.trim().length < 8) throw new TypeError("The wts.is app key is invalid.");
-    return NativeWtsSdk.configure(appKey.trim(), apiBaseUrl ?? null);
+    return wrapNativePromise(NativeWtsSdk.configure(appKey.trim(), apiBaseUrl ?? null));
   },
-  async handle(url: string) {
-    try {
-      return await NativeWtsSdk.handle(url);
-    } catch (error) {
-      const native = error as { code?: string; message?: string };
-      throw new WtsSdkError(native.code ?? "wts_sdk", native.message ?? "Native SDK error.", url);
-    }
+  handle(url: string) {
+    return wrapNativePromise(NativeWtsSdk.handle(url), url);
   },
   getDeferredDeepLink() {
-    return NativeWtsSdk.getDeferredDeepLink();
+    return wrapNativePromise(NativeWtsSdk.getDeferredDeepLink());
   },
   setProfileConsent(granted: boolean) {
-    return NativeWtsSdk.setProfileConsent(granted);
+    return wrapNativePromise(NativeWtsSdk.setProfileConsent(granted));
   },
   identify(externalUserId: string, attributes: Record<string, WtsUserValue> = {}) {
-    const normalized = externalUserId.trim();
-    if (normalized.length < 1 || normalized.length > 128) {
+    if (externalUserId.length < 1 || externalUserId.length > 128) {
       throw new TypeError("externalUserId must contain 1 to 128 characters.");
     }
-    return NativeWtsSdk.identify(normalized, normalizeAttributes(attributes));
+    return wrapNativePromise(
+      NativeWtsSdk.identify(externalUserId, normalizeAttributes(attributes)),
+    );
   },
   updateUser(update: WtsUserUpdate) {
     const value = validateUserUpdate(update);
-    return NativeWtsSdk.updateUser(value.set, value.setOnce, value.unset, value.increment);
+    return wrapNativePromise(
+      NativeWtsSdk.updateUser(value.set, value.setOnce, value.unset, value.increment),
+    );
   },
   setReportedAttribution(attribution: WtsReportedAttribution) {
     const source = attribution.source.trim();
     if (!source || source.length > 120) {
       throw new TypeError("Attribution source must contain 1 to 120 characters.");
     }
-    return NativeWtsSdk.setReportedAttribution(
-      source,
-      attribution.medium ?? null,
-      attribution.campaign ?? null,
-      attribution.externalRef ?? null,
+    return wrapNativePromise(
+      NativeWtsSdk.setReportedAttribution(
+        source,
+        attribution.medium ?? null,
+        attribution.campaign ?? null,
+        attribution.externalRef ?? null,
+      ),
     );
   },
   resetIdentity() {
-    return NativeWtsSdk.resetIdentity();
+    return wrapNativePromise(NativeWtsSdk.resetIdentity());
   },
   track(
     eventKey: string,
@@ -175,15 +187,17 @@ export const WtsSdk = {
     linkId?: string,
   ) {
     validateEvent(eventKey, properties, revenue);
-    return NativeWtsSdk.track(
-      eventKey,
-      properties,
-      revenue?.amount ?? null,
-      revenue?.currency.toUpperCase() ?? null,
-      linkId ?? null,
+    return wrapNativePromise(
+      NativeWtsSdk.track(
+        eventKey,
+        properties,
+        revenue?.amount ?? null,
+        revenue?.currency.toUpperCase() ?? null,
+        linkId ?? null,
+      ),
     );
   },
   flush() {
-    return NativeWtsSdk.flush();
+    return wrapNativePromise(NativeWtsSdk.flush());
   },
 };

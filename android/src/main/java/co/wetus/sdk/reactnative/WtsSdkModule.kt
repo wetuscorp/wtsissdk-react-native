@@ -7,6 +7,7 @@ import co.wetus.sdk.WtsProfileConsent
 import co.wetus.sdk.WtsRevenue
 import co.wetus.sdk.WtsReportedAttribution
 import co.wetus.sdk.WtsSdk
+import co.wetus.sdk.WtsSdkException
 import co.wetus.sdk.WtsUserUpdate
 import co.wetus.sdk.WtsUserValue
 import co.wetus.sdk.WtsValue
@@ -34,7 +35,7 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
                 appKey,
                 WtsOptions(apiBaseUrl = apiBaseUrl ?: "https://api.wts.is/api/v1"),
             )
-        }.fold({ promise.resolve(null) }, { promise.reject(ERROR_CODE, it) })
+        }.fold({ promise.resolve(null) }, { promise.reject(it.wtsCode(), it) })
     }
 
     override fun handle(url: String, promise: Promise) = launch(promise) {
@@ -50,7 +51,7 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
             WtsSdk.shared().setProfileConsent(
                 if (granted) WtsProfileConsent.GRANTED else WtsProfileConsent.DENIED,
             )
-        }.fold({ promise.resolve(null) }, { promise.reject(ERROR_CODE, it) })
+        }.fold({ promise.resolve(null) }, { promise.reject(it.wtsCode(), it) })
     }
 
     override fun identify(
@@ -126,7 +127,10 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
     }
 
     private fun launch(promise: Promise, block: suspend () -> Any?) {
-        scope.launch { runCatching { block() }.fold(promise::resolve) { promise.reject(ERROR_CODE, it) } }
+        scope.launch {
+            runCatching { block() }
+                .fold(promise::resolve) { promise.reject(it.wtsCode(), it) }
+        }
     }
 
     private fun Any?.toWtsValue(): WtsValue = when (this) {
@@ -172,8 +176,10 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
 
     companion object {
         const val NAME = "WtsSdk"
-        private const val ERROR_CODE = "wts_sdk"
         private fun invalidProfileValue(): Nothing =
             throw IllegalArgumentException("The typed user attribute bridge payload is invalid.")
     }
 }
+
+private fun Throwable.wtsCode(): String =
+    (this as? WtsSdkException)?.code ?: "NATIVE_ERROR"

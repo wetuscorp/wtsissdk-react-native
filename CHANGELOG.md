@@ -6,6 +6,8 @@
 - Added consent-gated `identify`, `updateUser`, `setReportedAttribution`, and `resetIdentity` APIs.
 - Preserved scalar, date, array, and decimal values across the New Architecture bridge.
 - Kept identity storage, ordering, retry, and networking in the Swift and Kotlin cores.
+- Preserved opaque external user IDs without trimming or normalization.
+- Normalized native failures into stable cross-platform `WtsSdkError` codes.
 
 ## 0.1.0-alpha.1
 
