@@ -37,6 +37,52 @@ RCT_EXPORT_MODULE()
   [_core getDeferredDeepLink:resolve reject:reject];
 }
 
+- (void)setProfileConsent:(BOOL)granted
+                  resolve:(RCTPromiseResolveBlock)resolve
+                   reject:(RCTPromiseRejectBlock)reject {
+  [_core setProfileConsent:granted resolve:resolve reject:reject];
+}
+
+- (void)identify:(NSString *)externalUserId
+      attributes:(NSDictionary *)attributes
+         resolve:(RCTPromiseResolveBlock)resolve
+          reject:(RCTPromiseRejectBlock)reject {
+  [_core identify:externalUserId attributes:attributes resolve:resolve reject:reject];
+}
+
+- (void)updateUser:(NSDictionary *)set
+           setOnce:(NSDictionary *)setOnce
+             unset:(NSArray<NSString *> *)unset
+         increment:(NSDictionary *)increment
+           resolve:(RCTPromiseResolveBlock)resolve
+            reject:(RCTPromiseRejectBlock)reject {
+  [_core updateUser:set
+            setOnce:setOnce
+              unset:unset
+          increment:increment
+            resolve:resolve
+             reject:reject];
+}
+
+- (void)setReportedAttribution:(NSString *)source
+                        medium:(NSString * _Nullable)medium
+                      campaign:(NSString * _Nullable)campaign
+                   externalRef:(NSString * _Nullable)externalRef
+                       resolve:(RCTPromiseResolveBlock)resolve
+                        reject:(RCTPromiseRejectBlock)reject {
+  [_core setReportedAttribution:source
+                         medium:medium
+                       campaign:campaign
+                    externalRef:externalRef
+                        resolve:resolve
+                         reject:reject];
+}
+
+- (void)resetIdentity:(RCTPromiseResolveBlock)resolve
+               reject:(RCTPromiseRejectBlock)reject {
+  [_core resetIdentity:resolve reject:reject];
+}
+
 - (void)track:(NSString *)eventKey
    properties:(NSDictionary *)properties
        amount:(NSString * _Nullable)amount

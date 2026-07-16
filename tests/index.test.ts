@@ -4,6 +4,11 @@ const nativeModule = {
   configure: jest.fn().mockResolvedValue(undefined),
   handle: jest.fn(),
   getDeferredDeepLink: jest.fn(),
+  setProfileConsent: jest.fn().mockResolvedValue(undefined),
+  identify: jest.fn().mockResolvedValue(undefined),
+  updateUser: jest.fn().mockResolvedValue(undefined),
+  setReportedAttribution: jest.fn().mockResolvedValue(undefined),
+  resetIdentity: jest.fn().mockResolvedValue(undefined),
   track: jest.fn().mockResolvedValue(undefined),
   flush: jest.fn().mockResolvedValue(undefined),
 };
@@ -55,7 +60,7 @@ describe("WtsSdk", () => {
 
   it("decodes the canonical resolve fixture without scalar coercion", async () => {
     const fixture = JSON.parse(
-      readFileSync("contracts/v1/fixtures/resolve-success.json", "utf8"),
+      readFileSync("contracts/mobile/v2/fixtures/resolve-success.json", "utf8"),
     );
     nativeModule.handle.mockResolvedValueOnce({
       ...fixture.link,
@@ -68,5 +73,19 @@ describe("WtsSdk", () => {
 
     expect(result.parameters).toEqual({ campaign: "summer", featured: true });
     expect(result.linkId).toBe("link_example");
+  });
+
+  it("keeps Date and ISO-looking strings distinct across the native bridge", async () => {
+    await WtsSdk.identify("customer_1842", {
+      created_at: new Date("2026-07-16T10:00:00.000Z"),
+      imported_at: "2026-07-16T10:00:00.000Z",
+      plan: "enterprise",
+    });
+
+    expect(nativeModule.identify).toHaveBeenCalledWith("customer_1842", {
+      created_at: { kind: "date", value: "2026-07-16T10:00:00.000Z" },
+      imported_at: { kind: "string", value: "2026-07-16T10:00:00.000Z" },
+      plan: { kind: "string", value: "enterprise" },
+    });
   });
 });

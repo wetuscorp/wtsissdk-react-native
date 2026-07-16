@@ -12,13 +12,22 @@ async function files(directory) {
 }
 
 const metadata = JSON.parse(await readFile('.wts-contracts.json', 'utf8'));
-const root = 'contracts/v1';
-const inner = [];
-for (const file of await files(root)) {
-  const digest = createHash('sha256').update(await readFile(file)).digest('hex');
-  inner.push(`${digest}  ./${path.relative(root, file)}\n`);
+async function checksum(root) {
+  const inner = [];
+  for (const file of await files(root)) {
+    const digest = createHash('sha256').update(await readFile(file)).digest('hex');
+    inner.push(`${digest}  ./${path.relative(root, file)}\n`);
+  }
+  return createHash('sha256').update(inner.join('')).digest('hex');
 }
-const actual = createHash('sha256').update(inner.join('')).digest('hex');
+
+const actual = await checksum('contracts/mobile/v2');
 if (actual !== metadata.fixtureChecksum) {
-  throw new Error(`Contract drift: expected ${metadata.fixtureChecksum}, got ${actual}`);
+  throw new Error(`Mobile contract drift: expected ${metadata.fixtureChecksum}, got ${actual}`);
+}
+const identityActual = await checksum('contracts/identity/v1');
+if (identityActual !== metadata.identityFixtureChecksum) {
+  throw new Error(
+    `Identity contract drift: expected ${metadata.identityFixtureChecksum}, got ${identityActual}`,
+  );
 }

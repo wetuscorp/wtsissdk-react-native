@@ -40,6 +40,94 @@ public final class WtsSdkNativeCore: NSObject {
         Task { resolve(await WtsSDK.shared.getDeferredDeepLink()?.dictionary) }
     }
 
+    public func setProfileConsent(
+        _ granted: Bool,
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            do {
+                try await WtsSDK.shared.setProfileConsent(granted ? .granted : .denied)
+                resolve(nil)
+            } catch { reject("wts_sdk", error.localizedDescription, error) }
+        }
+    }
+
+    public func identify(
+        _ externalUserId: String,
+        attributes: [String: Any],
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            do {
+                try await WtsSDK.shared.identify(
+                    externalUserId,
+                    attributes: try attributes.mapValues(WtsUserValue.init(nativeValue:))
+                )
+                resolve(nil)
+            } catch { reject("wts_sdk", error.localizedDescription, error) }
+        }
+    }
+
+    public func updateUser(
+        _ set: [String: Any],
+        setOnce: [String: Any],
+        unset: [String],
+        increment: [String: NSNumber],
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            do {
+                try await WtsSDK.shared.updateUser(
+                    WtsUserUpdate(
+                        set: try set.mapValues(WtsUserValue.init(nativeValue:)),
+                        setOnce: try setOnce.mapValues(WtsUserValue.init(nativeValue:)),
+                        unset: unset,
+                        increment: increment.mapValues(\.doubleValue)
+                    )
+                )
+                resolve(nil)
+            } catch { reject("wts_sdk", error.localizedDescription, error) }
+        }
+    }
+
+    public func setReportedAttribution(
+        _ source: String,
+        medium: String?,
+        campaign: String?,
+        externalRef: String?,
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            do {
+                try await WtsSDK.shared.setReportedAttribution(
+                    WtsReportedAttribution(
+                        source: source,
+                        medium: medium,
+                        campaign: campaign,
+                        externalRef: externalRef
+                    )
+                )
+                resolve(nil)
+            } catch { reject("wts_sdk", error.localizedDescription, error) }
+        }
+    }
+
+    public func resetIdentity(
+        _ resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            do {
+                try await WtsSDK.shared.resetIdentity()
+                resolve(nil)
+            } catch { reject("wts_sdk", error.localizedDescription, error) }
+        }
+    }
+
     public func track(
         _ eventKey: String,
         properties: [String: Any],
@@ -88,4 +176,39 @@ private extension WtsValue {
         default: throw WtsSDKError.invalidEvent(reason: "Event properties must be scalar values.")
         }
     }
+}
+
+private extension WtsUserValue {
+    init(nativeValue: Any) throws {
+        guard let encoded = nativeValue as? [String: Any],
+              let kind = encoded["kind"] as? String,
+              let value = encoded["value"] else {
+            throw WtsSDKError.invalidProfile(
+                reason: "User attributes must use the generated typed bridge contract."
+            )
+        }
+        switch kind {
+        case "string":
+            guard let value = value as? String else { throw invalidProfileValue() }
+            self = .string(value)
+        case "number":
+            guard let value = value as? NSNumber else { throw invalidProfileValue() }
+            self = .number(value.doubleValue)
+        case "boolean":
+            guard let value = value as? Bool else { throw invalidProfileValue() }
+            self = .boolean(value)
+        case "date":
+            guard let value = value as? String else { throw invalidProfileValue() }
+            self = .date(value)
+        case "string_array":
+            guard let values = value as? [String] else { throw invalidProfileValue() }
+            self = .stringArray(values)
+        default:
+            throw invalidProfileValue()
+        }
+    }
+}
+
+private func invalidProfileValue() -> WtsSDKError {
+    .invalidProfile(reason: "The typed user attribute bridge payload is invalid.")
 }
