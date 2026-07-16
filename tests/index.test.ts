@@ -4,6 +4,11 @@ const nativeModule = {
   configure: jest.fn().mockResolvedValue(undefined),
   handle: jest.fn(),
   getDeferredDeepLink: jest.fn(),
+  setProfileConsent: jest.fn().mockResolvedValue(undefined),
+  identify: jest.fn().mockResolvedValue(undefined),
+  updateUser: jest.fn().mockResolvedValue(undefined),
+  setReportedAttribution: jest.fn().mockResolvedValue(undefined),
+  resetIdentity: jest.fn().mockResolvedValue(undefined),
   track: jest.fn().mockResolvedValue(undefined),
   flush: jest.fn().mockResolvedValue(undefined),
 };
@@ -12,7 +17,7 @@ jest.mock("react-native", () => ({
   TurboModuleRegistry: { getEnforcing: () => nativeModule },
 }));
 
-import { WtsSdk } from "../src";
+import { WtsSdk, WtsSdkError } from "../src";
 
 describe("WtsSdk", () => {
   beforeEach(() => jest.clearAllMocks());
@@ -43,19 +48,39 @@ describe("WtsSdk", () => {
   });
 
   it("keeps the original URL on typed handle failures", async () => {
-    nativeModule.handle.mockRejectedValueOnce({ code: "timeout", message: "Request timed out" });
+    nativeModule.handle.mockRejectedValueOnce({ code: "TIMEOUT", message: "Request timed out" });
 
     await expect(WtsSdk.handle("https://demo.links.wts.is/summer")).rejects.toEqual(
       expect.objectContaining({
-        code: "timeout",
+        code: "TIMEOUT",
         fallbackUrl: "https://demo.links.wts.is/summer",
       }),
     );
   });
 
+  it("normalizes non-handle native failures into WtsSdkError", async () => {
+    nativeModule.identify.mockRejectedValueOnce({
+      code: "PROFILE_CONSENT_REQUIRED",
+      message: "Consent is required",
+    });
+
+    try {
+      await WtsSdk.identify("customer_1842");
+      throw new Error("Expected identify to reject.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(WtsSdkError);
+      expect(error).toEqual(
+        expect.objectContaining({
+          name: "WtsSdkError",
+          code: "PROFILE_CONSENT_REQUIRED",
+        }),
+      );
+    }
+  });
+
   it("decodes the canonical resolve fixture without scalar coercion", async () => {
     const fixture = JSON.parse(
-      readFileSync("contracts/v1/fixtures/resolve-success.json", "utf8"),
+      readFileSync("contracts/mobile/v2/fixtures/resolve-success.json", "utf8"),
     );
     nativeModule.handle.mockResolvedValueOnce({
       ...fixture.link,
@@ -68,5 +93,25 @@ describe("WtsSdk", () => {
 
     expect(result.parameters).toEqual({ campaign: "summer", featured: true });
     expect(result.linkId).toBe("link_example");
+  });
+
+  it("keeps Date and ISO-looking strings distinct across the native bridge", async () => {
+    await WtsSdk.identify("customer_1842", {
+      created_at: new Date("2026-07-16T10:00:00.000Z"),
+      imported_at: "2026-07-16T10:00:00.000Z",
+      plan: "enterprise",
+    });
+
+    expect(nativeModule.identify).toHaveBeenCalledWith("customer_1842", {
+      created_at: { kind: "date", value: "2026-07-16T10:00:00.000Z" },
+      imported_at: { kind: "string", value: "2026-07-16T10:00:00.000Z" },
+      plan: { kind: "string", value: "enterprise" },
+    });
+  });
+
+  it("preserves opaque external user IDs without trimming", async () => {
+    await WtsSdk.identify(" customer_1842 ");
+
+    expect(nativeModule.identify).toHaveBeenCalledWith(" customer_1842 ", {});
   });
 });

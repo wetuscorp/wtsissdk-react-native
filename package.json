@@ -1,9 +1,9 @@
 {
   "name": "@wetusco/wts-sdk",
-  "version": "0.1.0-alpha.1",
+  "version": "0.2.0-alpha.1",
   "description": "Official wts.is deep-link and attribution SDK for React Native",
   "license": "Apache-2.0",
-  "homepage": "https://wts.is",
+  "homepage": "https://wts.is/en/resources/docs/sdk-react-native",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/wetuscorp/wtsissdk-react-native.git"
