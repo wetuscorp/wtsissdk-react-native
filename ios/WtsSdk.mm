@@ -15,15 +15,61 @@ RCT_EXPORT_MODULE()
   self = [super init];
   if (self) {
     _core = [WtsSdkNativeCore new];
+    __weak WtsSdk *weakSelf = self;
+    _core.onExperienceAvailable = ^(NSDictionary *experience) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [weakSelf emitOnExperienceAvailable:experience];
+      });
+    };
+    _core.onExperienceAction = ^(NSDictionary *payload) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [weakSelf emitOnExperienceAction:payload];
+      });
+    };
   }
   return self;
 }
 
 - (void)configure:(NSString *)appKey
        apiBaseUrl:(NSString * _Nullable)apiBaseUrl
+  collectorBaseUrl:(NSString * _Nullable)collectorBaseUrl
+ experienceOptions:(NSDictionary *)experienceOptions
           resolve:(RCTPromiseResolveBlock)resolve
            reject:(RCTPromiseRejectBlock)reject {
-  [_core configure:appKey apiBaseUrl:apiBaseUrl resolve:resolve reject:reject];
+  [_core configure:appKey
+         apiBaseUrl:apiBaseUrl
+   collectorBaseUrl:collectorBaseUrl
+  experienceOptions:experienceOptions
+            resolve:resolve
+             reject:reject];
+}
+
+- (void)screen:(NSString *)name
+    properties:(NSDictionary *)properties
+       resolve:(RCTPromiseResolveBlock)resolve
+        reject:(RCTPromiseRejectBlock)reject {
+  [_core screen:name properties:properties resolve:resolve reject:reject];
+}
+
+- (void)setExperienceConsent:(NSString *)consent
+                     resolve:(RCTPromiseResolveBlock)resolve
+                      reject:(RCTPromiseRejectBlock)reject {
+  [_core setExperienceConsent:consent resolve:resolve reject:reject];
+}
+
+- (void)presentNextExperience:(RCTPromiseResolveBlock)resolve
+                       reject:(RCTPromiseRejectBlock)reject {
+  [_core presentNextExperience:resolve reject:reject];
+}
+
+- (void)dismissCurrentExperience:(RCTPromiseResolveBlock)resolve
+                          reject:(RCTPromiseRejectBlock)reject {
+  [_core dismissCurrentExperience:resolve reject:reject];
+}
+
+- (void)getExperienceDiagnostics:(RCTPromiseResolveBlock)resolve
+                          reject:(RCTPromiseRejectBlock)reject {
+  [_core getExperienceDiagnostics:resolve reject:reject];
 }
 
 - (void)handle:(NSString *)url

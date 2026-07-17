@@ -1,6 +1,19 @@
-import NativeWtsSdk, { type DeepLinkResult } from "./NativeWtsSdk";
+import NativeWtsSdk, {
+  type DeepLinkResult,
+  type ExperienceActionEvent,
+  type ExperienceActionResult,
+  type ExperienceDiagnosticsResult,
+  type ExperienceResult,
+  type ExperienceTranslationResult,
+} from "./NativeWtsSdk";
 
-export type { DeepLinkResult };
+export type {
+  DeepLinkResult,
+  ExperienceActionEvent,
+  ExperienceActionResult,
+  ExperienceResult,
+  ExperienceTranslationResult,
+};
 export type WtsScalar = string | number | boolean;
 export type WtsRevenue = { amount: string; currency: string };
 export type WtsUserValue = WtsScalar | string[] | Date;
@@ -15,6 +28,25 @@ export type WtsReportedAttribution = {
   medium?: string;
   campaign?: string;
   externalRef?: string;
+};
+export type WtsExperienceConsent = "pending" | "contextual" | "personalized" | "denied";
+export type WtsExperienceRenderMode = "automatic" | "manual";
+export type WtsExperienceOptions = {
+  enabled?: boolean;
+  renderMode?: WtsExperienceRenderMode;
+  allowedInternalRoutes?: string[];
+  allowedCallbackKeys?: string[];
+  allowedDeepLinkHosts?: string[];
+  allowedDeepLinkSchemes?: string[];
+  allowedWebOrigins?: string[];
+};
+export type WtsConfigureOptions = {
+  apiBaseUrl?: string;
+  collectorBaseUrl?: string;
+  experiences?: WtsExperienceOptions;
+};
+export type WtsExperienceDiagnostics = ExperienceDiagnosticsResult & {
+  consent: WtsExperienceConsent;
 };
 
 export class WtsSdkError extends Error {
@@ -136,9 +168,25 @@ function validateUserUpdate(update: WtsUserUpdate) {
 }
 
 export const WtsSdk = {
-  configure(appKey: string, apiBaseUrl?: string) {
+  configure(appKey: string, options: WtsConfigureOptions = {}) {
     if (appKey.trim().length < 8) throw new TypeError("The wts.is app key is invalid.");
-    return wrapNativePromise(NativeWtsSdk.configure(appKey.trim(), apiBaseUrl ?? null));
+    const experiences = options.experiences ?? {};
+    return wrapNativePromise(
+      NativeWtsSdk.configure(
+        appKey.trim(),
+        options.apiBaseUrl ?? null,
+        options.collectorBaseUrl ?? null,
+        {
+          enabled: experiences.enabled ?? false,
+          renderMode: experiences.renderMode ?? "automatic",
+          allowedInternalRoutes: experiences.allowedInternalRoutes ?? [],
+          allowedCallbackKeys: experiences.allowedCallbackKeys ?? [],
+          allowedDeepLinkHosts: experiences.allowedDeepLinkHosts ?? [],
+          allowedDeepLinkSchemes: experiences.allowedDeepLinkSchemes ?? [],
+          allowedWebOrigins: experiences.allowedWebOrigins ?? [],
+        },
+      ),
+    );
   },
   handle(url: string) {
     return wrapNativePromise(NativeWtsSdk.handle(url), url);
@@ -197,7 +245,39 @@ export const WtsSdk = {
       ),
     );
   },
+  screen(name: string, properties: Record<string, WtsScalar> = {}) {
+    const normalized = name.trim();
+    if (!normalized || normalized.length > 120) {
+      throw new TypeError("Screen name must contain 1 to 120 characters.");
+    }
+    validateEventProperties(properties);
+    return wrapNativePromise(NativeWtsSdk.screen(normalized, properties));
+  },
+  setExperienceConsent(consent: WtsExperienceConsent) {
+    return wrapNativePromise(NativeWtsSdk.setExperienceConsent(consent));
+  },
+  presentNextExperience() {
+    return wrapNativePromise(NativeWtsSdk.presentNextExperience());
+  },
+  dismissCurrentExperience() {
+    return wrapNativePromise(NativeWtsSdk.dismissCurrentExperience());
+  },
+  getExperienceDiagnostics() {
+    return wrapNativePromise(
+      NativeWtsSdk.getExperienceDiagnostics() as Promise<WtsExperienceDiagnostics>,
+    );
+  },
+  onExperienceAvailable(handler: (experience: ExperienceResult) => void | Promise<void>) {
+    return NativeWtsSdk.onExperienceAvailable(handler);
+  },
+  onExperienceAction(handler: (event: ExperienceActionEvent) => void | Promise<void>) {
+    return NativeWtsSdk.onExperienceAction(handler);
+  },
   flush() {
     return wrapNativePromise(NativeWtsSdk.flush());
   },
 };
+
+function validateEventProperties(properties: Record<string, WtsScalar>) {
+  validateEvent("screen_view", properties);
+}

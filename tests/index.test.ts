@@ -10,6 +10,19 @@ const nativeModule = {
   setReportedAttribution: jest.fn().mockResolvedValue(undefined),
   resetIdentity: jest.fn().mockResolvedValue(undefined),
   track: jest.fn().mockResolvedValue(undefined),
+  screen: jest.fn().mockResolvedValue(undefined),
+  setExperienceConsent: jest.fn().mockResolvedValue("accepted"),
+  presentNextExperience: jest.fn().mockResolvedValue(false),
+  dismissCurrentExperience: jest.fn().mockResolvedValue(false),
+  getExperienceDiagnostics: jest.fn().mockResolvedValue({
+    enabled: true,
+    consent: "contextual",
+    queued: 0,
+    presenting: false,
+    testDeviceToken: "test-device-token",
+  }),
+  onExperienceAvailable: jest.fn().mockReturnValue({ remove: jest.fn() }),
+  onExperienceAction: jest.fn().mockReturnValue({ remove: jest.fn() }),
   flush: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -32,6 +45,53 @@ describe("WtsSdk", () => {
       "TRY",
       null,
     );
+  });
+
+  it("configures Experiences as an explicit opt-in native feature", async () => {
+    await WtsSdk.configure("public-app-key", {
+      experiences: {
+        enabled: true,
+        renderMode: "automatic",
+        allowedInternalRoutes: ["/checkout"],
+      },
+    });
+
+    expect(nativeModule.configure).toHaveBeenCalledWith(
+      "public-app-key",
+      null,
+      null,
+      expect.objectContaining({
+        enabled: true,
+        renderMode: "automatic",
+        allowedInternalRoutes: ["/checkout"],
+      }),
+    );
+  });
+
+  it("forwards typed screen context to the native Mobile Protocol V3 core", async () => {
+    await WtsSdk.screen("checkout", { cart_total: 749.9, item_count: 3 });
+
+    expect(nativeModule.screen).toHaveBeenCalledWith("checkout", {
+      cart_total: 749.9,
+      item_count: 3,
+    });
+  });
+
+  it("subscribes to generated Experience availability and action events", () => {
+    const available = jest.fn();
+    const action = jest.fn();
+
+    WtsSdk.onExperienceAvailable(available);
+    WtsSdk.onExperienceAction(action);
+
+    expect(nativeModule.onExperienceAvailable).toHaveBeenCalledWith(available);
+    expect(nativeModule.onExperienceAction).toHaveBeenCalledWith(action);
+  });
+
+  it("exposes the PII-free native test device token in diagnostics", async () => {
+    await expect(WtsSdk.getExperienceDiagnostics()).resolves.toMatchObject({
+      testDeviceToken: "test-device-token",
+    });
   });
 
   it("rejects non-scalar properties before calling the native core", () => {

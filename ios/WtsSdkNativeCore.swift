@@ -4,9 +4,14 @@ import WtsSDK
 
 @objcMembers
 public final class WtsSdkNativeCore: NSObject {
+    public var onExperienceAvailable: (([String: Any]) -> Void)?
+    public var onExperienceAction: (([String: Any]) -> Void)?
+
     public func configure(
         _ appKey: String,
         apiBaseUrl: String?,
+        collectorBaseUrl: String?,
+        experienceOptions: [String: Any],
         resolve: @escaping RCTPromiseResolveBlock,
         reject: @escaping RCTPromiseRejectBlock
     ) {
@@ -14,7 +19,41 @@ public final class WtsSdkNativeCore: NSObject {
             do {
                 var options = WtsOptions()
                 if let apiBaseUrl, let url = URL(string: apiBaseUrl) { options.apiBaseURL = url }
+                if let collectorBaseUrl, let url = URL(string: collectorBaseUrl) {
+                    options.collectorBaseURL = url
+                }
+                options.experiences = WtsExperienceOptions(
+                    enabled: experienceOptions["enabled"] as? Bool ?? false,
+                    renderMode: experienceOptions["renderMode"] as? String == "manual"
+                        ? .manual
+                        : .automatic,
+                    allowedInternalRoutes: Set(
+                        experienceOptions["allowedInternalRoutes"] as? [String] ?? []
+                    ),
+                    allowedCallbackKeys: Set(
+                        experienceOptions["allowedCallbackKeys"] as? [String] ?? []
+                    ),
+                    allowedDeepLinkHosts: Set(
+                        experienceOptions["allowedDeepLinkHosts"] as? [String] ?? []
+                    ),
+                    allowedDeepLinkSchemes: Set(
+                        experienceOptions["allowedDeepLinkSchemes"] as? [String] ?? []
+                    ),
+                    allowedWebOrigins: Set(
+                        experienceOptions["allowedWebOrigins"] as? [String] ?? []
+                    )
+                )
                 try await WtsSDK.shared.configure(appKey: appKey, options: options)
+                await WtsSDK.shared.onExperienceAvailable { [weak self] experience in
+                    self?.onExperienceAvailable?(experience.dictionary)
+                }
+                await WtsSDK.shared.onExperienceAction { [weak self] experience, action in
+                    self?.onExperienceAction?([
+                        "experience": experience.dictionary,
+                        "action": action.dictionary,
+                    ])
+                    return false
+                }
                 resolve(nil)
             } catch { rejectWts(error, reject) }
         }
@@ -150,6 +189,73 @@ public final class WtsSdkNativeCore: NSObject {
         }
     }
 
+    public func screen(
+        _ name: String,
+        properties: [String: Any],
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            do {
+                try await WtsSDK.shared.screen(
+                    name,
+                    properties: try properties.mapValues(WtsValue.init(nativeValue:))
+                )
+                resolve(nil)
+            } catch { rejectWts(error, reject) }
+        }
+    }
+
+    public func setExperienceConsent(
+        _ consent: String,
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            do {
+                guard let value = WtsExperienceConsent(rawValue: consent) else {
+                    throw WtsSDKError.invalidEvent(reason: "Invalid experience consent.")
+                }
+                let result = try await WtsSDK.shared.setExperienceConsent(value)
+                resolve(String(describing: result))
+            } catch { rejectWts(error, reject) }
+        }
+    }
+
+    public func presentNextExperience(
+        _ resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task { resolve(await WtsSDK.shared.presentNextExperience() != nil) }
+    }
+
+    public func dismissCurrentExperience(
+        _ resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            await WtsSDK.shared.dismissCurrentExperience()
+            resolve(true)
+        }
+    }
+
+    public func getExperienceDiagnostics(
+        _ resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            let value = await WtsSDK.shared.getExperienceDiagnostics()
+            resolve([
+                "enabled": value.enabled,
+                "consent": value.consent.rawValue,
+                "queued": value.queued,
+                "presenting": value.presenting,
+                "testDeviceToken": value.testDeviceToken,
+                "lastErrorCode": value.lastErrorCode as Any,
+            ])
+        }
+    }
+
     public func flush(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
         Task { await WtsSDK.shared.flush(); resolve(nil) }
     }
@@ -172,6 +278,56 @@ private extension WtsDeepLink {
             "attributionId": attributionId,
             "isDeferred": isDeferred,
         ]
+    }
+}
+
+private extension WtsExperience {
+    var dictionary: [String: Any] {
+        var result: [String: Any] = [
+            "campaignId": campaignId,
+            "campaignVersionId": campaignVersionId,
+            "assignmentId": assignmentId,
+            "variantId": variantId,
+            "exposureId": exposureId,
+            "placement": placement.rawValue,
+            "priority": priority,
+            "translations": content.translations.map { locale, value in
+                var translation: [String: Any] = [
+                    "locale": locale,
+                    "title": value.title,
+                    "description": value.description,
+                ]
+                if let action = value.primaryAction {
+                    translation["primaryAction"] = action.dictionary
+                }
+                if let action = value.secondaryAction {
+                    translation["secondaryAction"] = action.dictionary
+                }
+                return translation
+            },
+            "closeable": content.closeable,
+            "themePreset": content.themePreset,
+            "delaySeconds": content.delaySeconds,
+        ]
+        if let autoCloseSeconds = content.autoCloseSeconds {
+            result["autoCloseSeconds"] = autoCloseSeconds
+        }
+        if let assetURL {
+            result["assetUrl"] = assetURL.absoluteString
+        }
+        return result
+    }
+}
+
+private extension WtsExperienceAction {
+    var dictionary: [String: Any] {
+        var result: [String: Any] = [
+            "id": id,
+            "label": label,
+            "type": type.rawValue,
+        ]
+        if let target { result["target"] = target }
+        return result
     }
 }
 

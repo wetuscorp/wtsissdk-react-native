@@ -2,6 +2,11 @@ package co.wetus.sdk.reactnative
 
 import android.net.Uri
 import co.wetus.sdk.WtsDeepLink
+import co.wetus.sdk.WtsExperienceConsent
+import co.wetus.sdk.WtsExperience
+import co.wetus.sdk.WtsExperienceAction
+import co.wetus.sdk.WtsExperienceOptions
+import co.wetus.sdk.WtsExperienceRenderMode
 import co.wetus.sdk.WtsOptions
 import co.wetus.sdk.WtsProfileConsent
 import co.wetus.sdk.WtsRevenue
@@ -16,6 +21,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableNativeMap
+import com.facebook.react.bridge.WritableNativeArray
 import com.facebook.react.module.annotations.ReactModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,13 +34,52 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
 
     override fun getName() = NAME
 
-    override fun configure(appKey: String, apiBaseUrl: String?, promise: Promise) {
+    override fun configure(
+        appKey: String,
+        apiBaseUrl: String?,
+        collectorBaseUrl: String?,
+        experienceOptions: ReadableMap,
+        promise: Promise,
+    ) {
         runCatching {
-            WtsSdk.configure(
+            val raw = experienceOptions.toHashMap()
+            val sdk = WtsSdk.configure(
                 reactApplicationContext,
                 appKey,
-                WtsOptions(apiBaseUrl = apiBaseUrl ?: "https://api.wts.is/api/v1"),
+                WtsOptions(
+                    apiBaseUrl = apiBaseUrl ?: "https://api.wts.is/api/v1",
+                    collectorBaseUrl = collectorBaseUrl ?: "https://collect.wts.is",
+                    experiences = WtsExperienceOptions(
+                        enabled = raw["enabled"] as? Boolean ?: false,
+                        renderMode = if (raw["renderMode"] == "manual") {
+                            WtsExperienceRenderMode.MANUAL
+                        } else {
+                            WtsExperienceRenderMode.AUTOMATIC
+                        },
+                        allowedInternalRoutes = raw.stringSet("allowedInternalRoutes"),
+                        allowedCallbackKeys = raw.stringSet("allowedCallbackKeys"),
+                        allowedDeepLinkHosts = raw.stringSet("allowedDeepLinkHosts"),
+                        allowedDeepLinkSchemes = raw.stringSet("allowedDeepLinkSchemes"),
+                        allowedWebOrigins = raw.stringSet("allowedWebOrigins"),
+                    ),
+                ),
             )
+            sdk.onExperienceAvailable { experience ->
+                scope.launch {
+                    emitOnExperienceAvailable(experience.toWritableMap())
+                }
+            }
+            sdk.onExperienceAction { experience, action ->
+                scope.launch {
+                    emitOnExperienceAction(
+                        WritableNativeMap().apply {
+                            putMap("experience", experience.toWritableMap())
+                            putMap("action", action.toWritableMap())
+                        },
+                    )
+                }
+                false
+            }
         }.fold({ promise.resolve(null) }, { promise.reject(it.wtsCode(), it) })
     }
 
@@ -121,6 +166,50 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
         null
     }
 
+    override fun screen(
+        name: String,
+        properties: ReadableMap,
+        promise: Promise,
+    ) = launch(promise) {
+        WtsSdk.shared().screen(
+            name,
+            properties.toHashMap().mapValues { (_, value) -> value.toWtsValue() },
+        )
+        null
+    }
+
+    override fun setExperienceConsent(consent: String, promise: Promise) = launch(promise) {
+        WtsSdk.shared().setExperienceConsent(
+            WtsExperienceConsent.valueOf(consent.uppercase()),
+        ).name.lowercase()
+    }
+
+    override fun presentNextExperience(promise: Promise) {
+        runCatching { WtsSdk.shared().presentNextExperience() }
+            .fold(promise::resolve) { promise.reject(it.wtsCode(), it) }
+    }
+
+    override fun dismissCurrentExperience(promise: Promise) {
+        runCatching { WtsSdk.shared().dismissCurrentExperience() }
+            .fold(promise::resolve) { promise.reject(it.wtsCode(), it) }
+    }
+
+    override fun getExperienceDiagnostics(promise: Promise) {
+        runCatching {
+            WtsSdk.shared().getExperienceDiagnostics().let {
+                WritableNativeMap().apply {
+                    putBoolean("enabled", it.enabled)
+                    putString("consent", it.consent.name.lowercase())
+                    putInt("queued", it.queued)
+                    putBoolean("presenting", it.presenting)
+                    putString("testDeviceToken", it.testDeviceToken)
+                    if (it.lastErrorCode == null) putNull("lastErrorCode")
+                    else putString("lastErrorCode", it.lastErrorCode)
+                }
+            }
+        }.fold(promise::resolve) { promise.reject(it.wtsCode(), it) }
+    }
+
     override fun flush(promise: Promise) = launch(promise) {
         WtsSdk.shared().flush()
         null
@@ -174,6 +263,48 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
         putBoolean("isDeferred", isDeferred)
     }
 
+    private fun WtsExperience.toWritableMap() = WritableNativeMap().apply {
+        putString("campaignId", campaignId)
+        putString("campaignVersionId", campaignVersionId)
+        putString("assignmentId", assignmentId)
+        putString("variantId", variantId)
+        putString("exposureId", exposureId)
+        putString("placement", placement.name.lowercase())
+        putInt("priority", priority)
+        putArray(
+            "translations",
+            WritableNativeArray().apply {
+                content.translations.forEach { (locale, value) ->
+                    pushMap(
+                        WritableNativeMap().apply {
+                            putString("locale", locale)
+                            putString("title", value.title)
+                            putString("description", value.description)
+                            value.primaryAction?.let {
+                                putMap("primaryAction", it.toWritableMap())
+                            }
+                            value.secondaryAction?.let {
+                                putMap("secondaryAction", it.toWritableMap())
+                            }
+                        },
+                    )
+                }
+            },
+        )
+        putBoolean("closeable", content.closeable)
+        putString("themePreset", content.themePreset)
+        putDouble("delaySeconds", content.delaySeconds)
+        content.autoCloseSeconds?.let { putDouble("autoCloseSeconds", it) }
+        assetUrl?.let { putString("assetUrl", it) }
+    }
+
+    private fun WtsExperienceAction.toWritableMap() = WritableNativeMap().apply {
+        putString("id", id)
+        putString("label", label)
+        putString("type", type.name)
+        target?.let { putString("target", it) }
+    }
+
     companion object {
         const val NAME = "WtsSdk"
         private fun invalidProfileValue(): Nothing =
@@ -183,3 +314,6 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
 
 private fun Throwable.wtsCode(): String =
     (this as? WtsSdkException)?.code ?: "NATIVE_ERROR"
+
+private fun Map<String, Any?>.stringSet(key: String): Set<String> =
+    (this[key] as? List<*>)?.mapNotNull { it as? String }?.toSet() ?: emptySet()

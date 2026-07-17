@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0-alpha.1
+
+- Wrapped Mobile Protocol V3 built-in screen tracking.
+- Added explicitly opt-in contextual and personalized wts.is Experiences.
+- Added native automatic/manual presentation and diagnostics through TurboModules.
+- Kept protocol, persistence, safe actions and impression measurement in the Swift/Kotlin cores.
+
 ## 0.2.0-alpha.1
 
 - Upgraded the native wrappers to Mobile Protocol V2 and Identity V1.
