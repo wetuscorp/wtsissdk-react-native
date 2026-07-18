@@ -96,9 +96,11 @@ Never derive these values from, or include, server signing secrets in a client.
 The native core ignores the unsigned outer manifest and verifies its signed
 payload before it is parsed.
 
-`automatic` keeps presentation inside the native core. In `manual` mode,
-`onExperienceAvailable` receives typed renderable content and one opaque
-SDK-issued handle only after a candidate is queued. Delivery identifiers never
+`automatic` keeps presentation inside the native core. For `manual` mode,
+replace the configuration above with `renderMode: 'manual'` before registering
+a handler. The `onExperienceAvailable` callback then receives typed renderable
+content and one opaque SDK-issued handle only after a candidate is queued.
+Delivery identifiers never
 enter the public manual payload. The host owns UI rendering and reports the
 actual lifecycle:
 
