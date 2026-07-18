@@ -21,6 +21,44 @@ const nativeModule = {
     presenting: false,
     testDeviceToken: "test-device-token",
   }),
+  joinTestSession: jest.fn().mockResolvedValue({
+    accepted: true,
+    joined: true,
+    compatible: true,
+    checks: [{ key: "sdk_version", status: "passed" }],
+    sessionId: "test-session-id",
+  }),
+  leaveTestSession: jest.fn().mockResolvedValue(true),
+  getTestSessionDiagnostics: jest.fn().mockResolvedValue({
+    joined: true,
+    compatible: true,
+    checks: [{ key: "sdk_version", status: "passed" }],
+    pendingSignals: 2,
+    sessionId: "test-session-id",
+    expiresAt: "2026-07-18T12:00:00.000Z",
+    lastErrorCode: "TEST_SESSION_RETRYING",
+  }),
+  probeTestSessionUrl: jest.fn().mockResolvedValue({
+    match: true,
+    status: "active",
+    code: "OK",
+    originalUrl: "https://notiword.wts.is/checkout?ignored=true",
+    fallbackUrl: "https://personaleak.com/checkout",
+    link: {
+      id: "link_checkout",
+      path: "/checkout",
+      parametersJson: '{"coupon":"summer","member":true,"sourceId":42}',
+    },
+  }),
+  runTestSessionProbes: jest.fn().mockResolvedValue({
+    accepted: true,
+    emitted: ["identity_recorded", "event_recorded"],
+    skipped: [],
+    pendingSignals: 0,
+    experienceDecisionJson:
+      '{"outcome":"ready","testGrant":{"grant":"test-grant"},"decision":{"campaignId":"campaign_checkout"}}',
+  }),
+  reportTestSessionExperienceInteraction: jest.fn().mockResolvedValue(true),
   onExperienceAvailable: jest.fn().mockReturnValue({ remove: jest.fn() }),
   onExperienceAction: jest.fn().mockReturnValue({ remove: jest.fn() }),
   flush: jest.fn().mockResolvedValue(undefined),
@@ -92,6 +130,88 @@ describe("WtsSdk", () => {
     await expect(WtsSdk.getExperienceDiagnostics()).resolves.toMatchObject({
       testDeviceToken: "test-device-token",
     });
+  });
+
+  it("forwards a canonical pairing URL unchanged after trimming", async () => {
+    const canonicalPairing =
+      "https://notiword.wts.is/_wts/test/pair?pairing=pairing-token";
+
+    const result = await WtsSdk.joinTestSession(`  ${canonicalPairing}  `);
+
+    expect(nativeModule.joinTestSession).toHaveBeenCalledWith(canonicalPairing);
+    expect(result).toMatchObject({
+      accepted: true,
+      joined: true,
+      compatible: true,
+      sessionId: "test-session-id",
+      checks: [{ key: "sdk_version", status: "passed" }],
+    });
+  });
+
+  it("forwards diagnostics without reinterpreting native test-session state", async () => {
+    await expect(WtsSdk.getTestSessionDiagnostics()).resolves.toMatchObject({
+      joined: true,
+      compatible: true,
+      pendingSignals: 2,
+      sessionId: "test-session-id",
+      expiresAt: "2026-07-18T12:00:00.000Z",
+      lastErrorCode: "TEST_SESSION_RETRYING",
+    });
+    expect(nativeModule.getTestSessionDiagnostics).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards a test URL probe and decodes only its typed link payload", async () => {
+    const url = "https://notiword.wts.is/checkout?ignored=true";
+
+    await expect(WtsSdk.probeTestSessionUrl(url)).resolves.toEqual({
+      match: true,
+      status: "active",
+      code: "OK",
+      originalUrl: url,
+      fallbackUrl: "https://personaleak.com/checkout",
+      link: {
+        id: "link_checkout",
+        path: "/checkout",
+        parameters: { coupon: "summer", member: true, sourceId: 42 },
+      },
+    });
+    expect(nativeModule.probeTestSessionUrl).toHaveBeenCalledWith(url);
+  });
+
+  it("exposes the isolated test decision and reports only explicit test interactions", async () => {
+    const result = await WtsSdk.runTestSessionProbes();
+
+    expect(result).toEqual({
+      accepted: true,
+      emitted: ["identity_recorded", "event_recorded"],
+      skipped: [],
+      pendingSignals: 0,
+      experienceDecision: {
+        outcome: "ready",
+        testGrant: { grant: "test-grant" },
+        decision: { campaignId: "campaign_checkout" },
+      },
+    });
+    expect(result).not.toHaveProperty("experienceDecisionJson");
+
+    await WtsSdk.reportTestSessionExperienceInteraction("impression");
+    expect(nativeModule.reportTestSessionExperienceInteraction).toHaveBeenCalledWith(
+      "impression",
+    );
+  });
+
+  it("does not mirror normal Experience controls into the test-session channel", async () => {
+    await WtsSdk.presentNextExperience();
+    await WtsSdk.dismissCurrentExperience();
+
+    expect(nativeModule.reportTestSessionExperienceInteraction).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported test Experience interactions before native forwarding", () => {
+    expect(() =>
+      WtsSdk.reportTestSessionExperienceInteraction("dismiss" as never),
+    ).toThrow("Test Experience interactions must be impression or action.");
+    expect(nativeModule.reportTestSessionExperienceInteraction).not.toHaveBeenCalled();
   });
 
   it("rejects non-scalar properties before calling the native core", () => {

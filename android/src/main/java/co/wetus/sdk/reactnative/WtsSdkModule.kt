@@ -12,7 +12,16 @@ import co.wetus.sdk.WtsProfileConsent
 import co.wetus.sdk.WtsRevenue
 import co.wetus.sdk.WtsReportedAttribution
 import co.wetus.sdk.WtsSdk
+import co.wetus.sdk.WtsSdkFamily
 import co.wetus.sdk.WtsSdkException
+import co.wetus.sdk.WtsTestSessionExperienceDecision
+import co.wetus.sdk.WtsTestSessionExperienceInteraction
+import co.wetus.sdk.WtsTestSessionPairing
+import co.wetus.sdk.WtsTestSessionProbeLink
+import co.wetus.sdk.WtsTestSessionProbeResult
+import co.wetus.sdk.WtsTestSessionProbeRunResult
+import co.wetus.sdk.WtsTestSessionDiagnostics
+import co.wetus.sdk.WtsTestSessionJoinResult
 import co.wetus.sdk.WtsUserUpdate
 import co.wetus.sdk.WtsUserValue
 import co.wetus.sdk.WtsValue
@@ -27,6 +36,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 @ReactModule(name = WtsSdkModule.NAME)
 class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context) {
@@ -210,6 +222,42 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
         }.fold(promise::resolve) { promise.reject(it.wtsCode(), it) }
     }
 
+    override fun joinTestSession(pairing: String, promise: Promise) = launch(promise) {
+        WtsSdk.shared().joinTestSession(
+            WtsTestSessionPairing.from(pairing),
+            WtsSdkFamily.REACT_NATIVE,
+        ).toWritableMap()
+    }
+
+    override fun leaveTestSession(promise: Promise) = launch(promise) {
+        WtsSdk.shared().leaveTestSession()
+    }
+
+    override fun getTestSessionDiagnostics(promise: Promise) {
+        runCatching { WtsSdk.shared().getTestSessionDiagnostics().toWritableMap() }
+            .fold(promise::resolve) { promise.reject(it.wtsCode(), it) }
+    }
+
+    override fun probeTestSessionUrl(url: String, promise: Promise) = launch(promise) {
+        WtsSdk.shared().probeTestSessionUrl(url).toWritableMap()
+    }
+
+    override fun runTestSessionProbes(promise: Promise) = launch(promise) {
+        WtsSdk.shared().runTestSessionProbes().toWritableMap()
+    }
+
+    override fun reportTestSessionExperienceInteraction(
+        interaction: String,
+        promise: Promise,
+    ) = launch(promise) {
+        val value = when (interaction) {
+            "impression" -> WtsTestSessionExperienceInteraction.IMPRESSION
+            "action" -> WtsTestSessionExperienceInteraction.ACTION
+            else -> throw IllegalArgumentException("Unsupported test Experience interaction.")
+        }
+        WtsSdk.shared().reportTestSessionExperienceInteraction(value)
+    }
+
     override fun flush(promise: Promise) = launch(promise) {
         WtsSdk.shared().flush()
         null
@@ -303,6 +351,110 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
         putString("label", label)
         putString("type", type.name)
         target?.let { putString("target", it) }
+    }
+
+    private fun WtsTestSessionJoinResult.toWritableMap() = WritableNativeMap().apply {
+        putBoolean("accepted", accepted)
+        putBoolean("joined", joined)
+        putBoolean("compatible", compatible)
+        putArray("checks", checks.toWritableArray())
+        requiredSdkVersion?.let { putString("requiredSdkVersion", it) }
+        sessionId?.let { putString("sessionId", it) }
+        expiresAt?.let { putString("expiresAt", it) }
+        testProfileExternalUserId?.let { putString("testProfileExternalUserId", it) }
+        errorCode?.let { putString("errorCode", it) }
+    }
+
+    private fun WtsTestSessionDiagnostics.toWritableMap() = WritableNativeMap().apply {
+        putBoolean("joined", joined)
+        putBoolean("compatible", compatible)
+        putArray("checks", checks.toWritableArray())
+        putInt("pendingSignals", pendingSignals)
+        sessionId?.let { putString("sessionId", it) }
+        expiresAt?.let { putString("expiresAt", it) }
+        requiredSdkVersion?.let { putString("requiredSdkVersion", it) }
+        lastErrorCode?.let { putString("lastErrorCode", it) }
+    }
+
+    private fun List<co.wetus.sdk.WtsTestSessionCheck>.toWritableArray() =
+        WritableNativeArray().apply {
+            this@toWritableArray.forEach { check ->
+                pushMap(WritableNativeMap().apply {
+                    putString("key", check.key)
+                    putString("status", check.status)
+                    check.code?.let { putString("code", it) }
+                    check.message?.let { putString("message", it) }
+                })
+            }
+        }
+
+    private fun WtsTestSessionProbeResult.toWritableMap() = WritableNativeMap().apply {
+        putBoolean("match", match)
+        putString("status", status)
+        putString("code", code)
+        putString("originalUrl", originalUrl)
+        putString("fallbackUrl", fallbackUrl)
+        link?.let { putMap("link", it.toWritableMap()) }
+    }
+
+    private fun WtsTestSessionProbeLink.toWritableMap() = WritableNativeMap().apply {
+        putString("id", id)
+        putString("path", path)
+        putString(
+            "parametersJson",
+            JsonObject(parameters.mapValues { (_, value) -> value.toTestJson() }).toString(),
+        )
+    }
+
+    private fun WtsTestSessionProbeRunResult.toWritableMap() = WritableNativeMap().apply {
+        putBoolean("accepted", accepted)
+        putArray("emitted", WritableNativeArray().apply { emitted.forEach(::pushString) })
+        putArray("skipped", WritableNativeArray().apply { skipped.forEach(::pushString) })
+        putInt("pendingSignals", pendingSignals)
+        experienceDecision?.let { putString("experienceDecisionJson", it.toTestJson().toString()) }
+    }
+
+    private fun WtsTestSessionExperienceDecision.toTestJson() = JsonObject(
+        buildMap {
+            put("outcome", JsonPrimitive(outcome))
+            put("reason", reason?.let(::JsonPrimitive) ?: JsonNull)
+            put("testGrant", testGrant?.let { grant ->
+                JsonObject(
+                    mapOf(
+                        "fixtureId" to JsonPrimitive(grant.fixtureId),
+                        "expiresAt" to JsonPrimitive(grant.expiresAt),
+                    ),
+                )
+            } ?: JsonNull)
+            put("decision", decision?.let { campaign ->
+                JsonObject(
+                    buildMap {
+                        put("campaignId", JsonPrimitive(campaign.campaignId))
+                        put("campaignVersionId", JsonPrimitive(campaign.campaignVersionId))
+                        put("placement", JsonPrimitive(campaign.placement))
+                        put("defaultLocale", JsonPrimitive(campaign.defaultLocale))
+                        put("variant", campaign.variant?.let { variant ->
+                            JsonObject(
+                                buildMap {
+                                    put("id", JsonPrimitive(variant.id))
+                                    put("key", JsonPrimitive(variant.key))
+                                    put("content", variant.content)
+                                    put("asset", variant.assetUrl?.let { url ->
+                                        JsonObject(mapOf("url" to JsonPrimitive(url)))
+                                    } ?: JsonNull)
+                                },
+                            )
+                        } ?: JsonNull)
+                    },
+                )
+            } ?: JsonNull)
+        },
+    )
+
+    private fun WtsValue.toTestJson() = when (this) {
+        is WtsValue.StringValue -> JsonPrimitive(value)
+        is WtsValue.NumberValue -> JsonPrimitive(value)
+        is WtsValue.BooleanValue -> JsonPrimitive(value)
     }
 
     companion object {

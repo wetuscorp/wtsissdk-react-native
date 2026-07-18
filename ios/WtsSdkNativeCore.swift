@@ -256,6 +256,78 @@ public final class WtsSdkNativeCore: NSObject {
         }
     }
 
+    public func joinTestSession(
+        _ pairing: String,
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            do {
+                let result = await WtsSDK.shared.joinTestSession(
+                    try WtsTestSessionPairing.parse(pairing),
+                    sdkFamily: .reactNative
+                )
+                resolve(result.dictionary)
+            } catch { rejectWts(error, reject) }
+        }
+    }
+
+    public func leaveTestSession(
+        _ resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task { resolve(await WtsSDK.shared.leaveTestSession()) }
+    }
+
+    public func getTestSessionDiagnostics(
+        _ resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task { resolve(await WtsSDK.shared.getTestSessionDiagnostics().dictionary) }
+    }
+
+    public func probeTestSessionUrl(
+        _ url: String,
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            do {
+                guard let value = URL(string: url) else {
+                    throw WtsSDKError.invalidURL(fallbackURL: nil)
+                }
+                resolve(try await WtsSDK.shared.probeTestSessionURL(value).dictionary)
+            } catch { rejectWts(error, reject) }
+        }
+    }
+
+    public func runTestSessionProbes(
+        _ resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            do { resolve(try await WtsSDK.shared.runTestSessionProbes().dictionary) }
+            catch { rejectWts(error, reject) }
+        }
+    }
+
+    public func reportTestSessionExperienceInteraction(
+        _ interaction: String,
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            let parsed: WtsTestSessionExperienceInteraction? = interaction == "impression"
+                ? .impression
+                : interaction == "action" ? .action : nil
+            guard let value = parsed else {
+                reject("INVALID_TEST_EXPERIENCE_INTERACTION", "Unsupported test Experience interaction.", nil)
+                return
+            }
+            resolve(await WtsSDK.shared.reportTestSessionExperienceInteraction(value))
+        }
+    }
+
     public func flush(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
         Task { await WtsSDK.shared.flush(); resolve(nil) }
     }
@@ -329,6 +401,135 @@ private extension WtsExperienceAction {
         if let target { result["target"] = target }
         return result
     }
+}
+
+private extension WtsTestSessionJoinResult {
+    var dictionary: [String: Any] {
+        var result: [String: Any] = [
+            "accepted": accepted,
+            "joined": joined,
+            "compatible": compatible,
+            "checks": checks.map(\.dictionary),
+        ]
+        if let requiredSDKVersion { result["requiredSdkVersion"] = requiredSDKVersion }
+        if let sessionId { result["sessionId"] = sessionId }
+        if let expiresAt { result["expiresAt"] = expiresAt }
+        if let testProfileExternalUserId { result["testProfileExternalUserId"] = testProfileExternalUserId }
+        if let errorCode { result["errorCode"] = errorCode }
+        return result
+    }
+}
+
+private extension WtsTestSessionDiagnostics {
+    var dictionary: [String: Any] {
+        var result: [String: Any] = [
+            "joined": joined,
+            "compatible": compatible,
+            "checks": checks.map(\.dictionary),
+            "pendingSignals": pendingSignals,
+        ]
+        if let sessionId { result["sessionId"] = sessionId }
+        if let expiresAt { result["expiresAt"] = expiresAt }
+        if let requiredSDKVersion { result["requiredSdkVersion"] = requiredSDKVersion }
+        if let lastErrorCode { result["lastErrorCode"] = lastErrorCode }
+        return result
+    }
+}
+
+private extension WtsTestSessionCheck {
+    var dictionary: [String: Any] {
+        var result: [String: Any] = ["key": key, "status": status]
+        if let code { result["code"] = code }
+        if let message { result["message"] = message }
+        return result
+    }
+}
+
+private extension WtsTestSessionProbeLink {
+    var dictionary: [String: Any] {
+        [
+            "id": id,
+            "path": path,
+            "parametersJson": testSessionJSONString(parameters.mapValues(\.foundationValue)),
+        ]
+    }
+}
+
+private extension WtsTestSessionProbeResult {
+    var dictionary: [String: Any] {
+        var result: [String: Any] = [
+            "match": match,
+            "status": status,
+            "code": code,
+            "originalUrl": originalURL.absoluteString,
+            "fallbackUrl": fallbackURL.absoluteString,
+        ]
+        if let link { result["link"] = link.dictionary }
+        return result
+    }
+}
+
+private extension WtsTestSessionProbeRunResult {
+    var dictionary: [String: Any] {
+        var result: [String: Any] = [
+            "accepted": accepted,
+            "emitted": emitted,
+            "skipped": skipped,
+            "pendingSignals": pendingSignals,
+        ]
+        if let experienceDecision {
+            result["experienceDecisionJson"] = testSessionJSONString(experienceDecision.dictionary)
+        }
+        return result
+    }
+}
+
+private extension WtsTestSessionExperienceDecision {
+    var dictionary: [String: Any] {
+        [
+            "outcome": outcome,
+            "reason": reason ?? NSNull(),
+            "testGrant": testGrant.map { ["fixtureId": $0.fixtureId, "expiresAt": $0.expiresAt] }
+                ?? NSNull(),
+            "decision": decision.map { campaign in
+                [
+                    "campaignId": campaign.campaignId,
+                    "campaignVersionId": campaign.campaignVersionId,
+                    "placement": campaign.placement,
+                    "defaultLocale": campaign.defaultLocale,
+                    "variant": campaign.variant.map { variant in
+                        [
+                            "id": variant.id,
+                            "key": variant.key,
+                            "content": variant.content.foundationValue,
+                            "asset": variant.assetURL.map { ["url": $0.absoluteString] } ?? NSNull(),
+                        ]
+                    } ?? NSNull(),
+                ]
+            } ?? NSNull(),
+        ]
+    }
+}
+
+private extension WtsTestSessionJSONValue {
+    var foundationValue: Any {
+        switch self {
+        case .object(let value): value.mapValues(\.foundationValue)
+        case .array(let value): value.map(\.foundationValue)
+        case .string(let value): value
+        case .number(let value): value
+        case .bool(let value): value
+        case .null: NSNull()
+        }
+    }
+}
+
+private func testSessionJSONString(_ value: Any) -> String {
+    guard JSONSerialization.isValidJSONObject(value),
+          let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+          let text = String(data: data, encoding: .utf8)
+    else { return "{}" }
+    return text
 }
 
 private extension WtsValue {

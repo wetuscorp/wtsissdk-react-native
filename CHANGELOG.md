@@ -1,11 +1,17 @@
 # Changelog
 
+> Entries for the `0.3.0-alpha.1` source line below are not an npm or native
+> registry publication claim. SDK Test & Validate requires matching published
+> React Native, Swift, and Android releases.
+
 ## 0.3.0-alpha.1
 
 - Wrapped Mobile Protocol V3 built-in screen tracking.
 - Added explicitly opt-in contextual and personalized wts.is Experiences.
 - Added native automatic/manual presentation and diagnostics through TurboModules.
 - Kept protocol, persistence, safe actions and impression measurement in the Swift/Kotlin cores.
+- Added SDK Test Session V1 pairing, diagnostics, isolated probes, and explicit
+  test-only Experience impression/action reporting through the TurboModule.
 
 ## 0.2.0-alpha.1
 

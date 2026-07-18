@@ -72,6 +72,39 @@ RCT_EXPORT_MODULE()
   [_core getExperienceDiagnostics:resolve reject:reject];
 }
 
+- (void)joinTestSession:(NSString *)pairing
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  [_core joinTestSession:pairing resolve:resolve reject:reject];
+}
+
+- (void)leaveTestSession:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  [_core leaveTestSession:resolve reject:reject];
+}
+
+- (void)getTestSessionDiagnostics:(RCTPromiseResolveBlock)resolve
+                           reject:(RCTPromiseRejectBlock)reject {
+  [_core getTestSessionDiagnostics:resolve reject:reject];
+}
+
+- (void)probeTestSessionUrl:(NSString *)url
+                    resolve:(RCTPromiseResolveBlock)resolve
+                     reject:(RCTPromiseRejectBlock)reject {
+  [_core probeTestSessionUrl:url resolve:resolve reject:reject];
+}
+
+- (void)runTestSessionProbes:(RCTPromiseResolveBlock)resolve
+                      reject:(RCTPromiseRejectBlock)reject {
+  [_core runTestSessionProbes:resolve reject:reject];
+}
+
+- (void)reportTestSessionExperienceInteraction:(NSString *)interaction
+                                       resolve:(RCTPromiseResolveBlock)resolve
+                                        reject:(RCTPromiseRejectBlock)reject {
+  [_core reportTestSessionExperienceInteraction:interaction resolve:resolve reject:reject];
+}
+
 - (void)handle:(NSString *)url
        resolve:(RCTPromiseResolveBlock)resolve
         reject:(RCTPromiseRejectBlock)reject {

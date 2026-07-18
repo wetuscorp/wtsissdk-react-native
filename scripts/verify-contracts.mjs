@@ -37,3 +37,9 @@ if (experiencesActual !== metadata.experiencesFixtureChecksum) {
     `Experiences contract drift: expected ${metadata.experiencesFixtureChecksum}, got ${experiencesActual}`,
   );
 }
+const testSessionActual = await checksum('contracts/test-sessions/v1');
+if (testSessionActual !== metadata.testSessionFixtureChecksum) {
+  throw new Error(
+    `SDK Test Session contract drift: expected ${metadata.testSessionFixtureChecksum}, got ${testSessionActual}`,
+  );
+}

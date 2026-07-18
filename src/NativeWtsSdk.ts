@@ -54,6 +54,59 @@ export type ExperienceActionEvent = {
   action: ExperienceActionResult;
 };
 
+export type TestSessionCheckResult = {
+  key: string;
+  status: string;
+  code?: string;
+  message?: string;
+};
+
+export type TestSessionJoinResult = {
+  accepted: boolean;
+  joined: boolean;
+  compatible: boolean;
+  checks: ReadonlyArray<TestSessionCheckResult>;
+  requiredSdkVersion?: string;
+  sessionId?: string;
+  expiresAt?: string;
+  testProfileExternalUserId?: string;
+  errorCode?: string;
+};
+
+export type TestSessionDiagnosticsResult = {
+  joined: boolean;
+  compatible: boolean;
+  checks: ReadonlyArray<TestSessionCheckResult>;
+  pendingSignals: number;
+  sessionId?: string;
+  expiresAt?: string;
+  requiredSdkVersion?: string;
+  lastErrorCode?: string;
+};
+
+export type TestSessionProbeLinkResult = {
+  id: string;
+  path: string;
+  parametersJson: string;
+};
+
+export type TestSessionProbeResult = {
+  match: boolean;
+  status: string;
+  code: string;
+  originalUrl: string;
+  fallbackUrl: string;
+  link?: TestSessionProbeLinkResult;
+};
+
+export type TestSessionProbeRunResult = {
+  accepted: boolean;
+  emitted: ReadonlyArray<string>;
+  skipped: ReadonlyArray<string>;
+  pendingSignals: number;
+  experienceDecisionJson?: string;
+};
+
 export interface Spec extends TurboModule {
   readonly onExperienceAvailable: CodegenTypes.EventEmitter<ExperienceResult>;
   readonly onExperienceAction: CodegenTypes.EventEmitter<ExperienceActionEvent>;
@@ -92,6 +145,12 @@ export interface Spec extends TurboModule {
   presentNextExperience(): Promise<boolean>;
   dismissCurrentExperience(): Promise<boolean>;
   getExperienceDiagnostics(): Promise<ExperienceDiagnosticsResult>;
+  joinTestSession(pairing: string): Promise<TestSessionJoinResult>;
+  leaveTestSession(): Promise<boolean>;
+  getTestSessionDiagnostics(): Promise<TestSessionDiagnosticsResult>;
+  probeTestSessionUrl(url: string): Promise<TestSessionProbeResult>;
+  runTestSessionProbes(): Promise<TestSessionProbeRunResult>;
+  reportTestSessionExperienceInteraction(interaction: string): Promise<boolean>;
   flush(): Promise<void>;
 }
 
