@@ -357,7 +357,6 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
         putString("campaignVersionId", campaignVersionId)
         putString("assignmentId", assignmentId)
         putString("variantId", variantId)
-        putString("exposureId", exposureId)
         putString("placement", placement.name.lowercase())
         putInt("priority", priority)
         putArray(

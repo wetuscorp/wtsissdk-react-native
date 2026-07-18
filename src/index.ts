@@ -70,7 +70,7 @@ declare const wtsExperiencePresentationHandleBrand: unique symbol;
 export type WtsExperiencePresentationHandle = Readonly<{
   [wtsExperiencePresentationHandleBrand]: never;
 }>;
-export type WtsExperienceManualContent = Omit<ExperienceResult, "exposureId">;
+export type WtsExperienceManualContent = ExperienceResult;
 export type WtsExperienceManualPresentation = {
   experience: WtsExperienceManualContent;
   handle: WtsExperiencePresentationHandle;
@@ -143,7 +143,8 @@ function nativeExposureIdForManualHandle(handle: WtsExperiencePresentationHandle
 function manualPresentationFromNative(
   presentation: ExperienceManualPresentationResult,
 ): WtsExperienceManualPresentation {
-  const { exposureId: _nativeExposureId, ...experience } = presentation.experience;
+  const { exposureId: _nativeExposureId, ...experience } = presentation.experience as
+    ExperienceResult & { exposureId?: unknown };
   return {
     experience,
     handle: manualExperienceHandleFromNative(presentation.handle.exposureId),
@@ -464,7 +465,11 @@ export const WtsSdk = {
     );
   },
   onExperienceAction(handler: (event: ExperienceActionEvent) => void | Promise<void>) {
-    return NativeWtsSdk.onExperienceAction(handler);
+    return NativeWtsSdk.onExperienceAction(({ experience, action }) => {
+      const { exposureId: _nativeExposureId, ...safeExperience } = experience as
+        ExperienceResult & { exposureId?: unknown };
+      return handler({ experience: safeExperience, action });
+    });
   },
   flush() {
     return wrapNativePromise(NativeWtsSdk.flush());

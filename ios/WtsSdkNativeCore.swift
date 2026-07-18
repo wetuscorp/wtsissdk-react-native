@@ -431,7 +431,6 @@ private extension WtsExperience {
             "campaignVersionId": campaignVersionId,
             "assignmentId": assignmentId,
             "variantId": variantId,
-            "exposureId": exposureId,
             "placement": placement.rawValue,
             "priority": priority,
             "translations": content.translations.map { locale, value in

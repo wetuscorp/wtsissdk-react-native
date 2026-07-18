@@ -38,7 +38,6 @@ export type ExperienceResult = {
   campaignVersionId: string;
   assignmentId: string;
   variantId: string;
-  exposureId: string;
   placement: string;
   priority: number;
   translations: ReadonlyArray<ExperienceTranslationResult>;

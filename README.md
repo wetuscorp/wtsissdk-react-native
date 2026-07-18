@@ -2,17 +2,17 @@
 
 Official React Native New Architecture wrapper for the wts.is native SDKs. A TypeScript TurboModule spec is implemented by Codegen-backed Swift/ObjC++ and Kotlin modules; the JavaScript layer does not duplicate networking or attribution logic.
 
-> `0.4.0-alpha.1` release line · Mobile Protocol V3 + Identity V1 + Experiences V1 + SDK Test Session V1 · React Native 0.85/0.86 · New Architecture only
+> `0.4.0-alpha.1` · Mobile Protocol V3 + Identity V1 + Experiences V1 + SDK Test Session V1 · React Native 0.85/0.86 · New Architecture only
 
-> **Release compatibility:** SDK Test & Validate and Experiences require the
-> matching `0.4.0-alpha.1` React Native package and matching published
-> Swift/Android core releases. The wrapper pins those native dependencies
-> exactly, so publish the native cores before this package.
+> **Native-core compatibility:** `@wetusco/wts-sdk 0.4.0-alpha.1` pins Android
+> `co.wetus:wts-sdk:0.4.0-alpha.1` and iOS `WtsSDK 0.4.0-alpha.1` exactly.
+> Keep these companion native cores on the same version; do not override them
+> to an earlier or later release.
 
 ## Install
 
 ```bash
-npm install @wetusco/wts-sdk@<matching-published-version>
+npm install @wetusco/wts-sdk@0.4.0-alpha.1
 cd ios && bundle exec pod install
 ```
 
@@ -100,9 +100,9 @@ payload before it is parsed.
 replace the configuration above with `renderMode: 'manual'` before registering
 a handler. The `onExperienceAvailable` callback then receives typed renderable
 content and one opaque SDK-issued handle only after a candidate is queued.
-Delivery identifiers never
-enter the public manual payload. The host owns UI rendering and reports the
-actual lifecycle:
+Delivery identifiers never enter public Experience payloads; the SDK keeps the
+correlation required for manual lifecycle acknowledgements inside the opaque
+handle. The host owns UI rendering and reports the actual lifecycle:
 
 ```tsx
 const subscription = WtsSdk.onExperienceAvailable(async ({ experience, handle }) => {
@@ -128,7 +128,7 @@ rendering; manual mode never asks the native renderer to present or emits a
 second availability callback. `onExperienceAction` remains available for safe
 action callbacks without a legacy bridge.
 
-For an unpublished device test, copy
+For a dashboard test device, copy
 `(await WtsSdk.getExperienceDiagnostics()).testDeviceToken` into the dashboard
 test panel for the matching Mobile App. The random token contains no install,
 user, or profile identifier, and test traffic is excluded from customer

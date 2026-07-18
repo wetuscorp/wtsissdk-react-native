@@ -159,7 +159,16 @@ describe("WtsSdk", () => {
     expect(Object.keys(presentation.handle)).toEqual([]);
     expect(nativeModule.presentNextExperience).not.toHaveBeenCalled();
     expect(nativeModule.dismissCurrentExperience).not.toHaveBeenCalled();
-    expect(nativeModule.onExperienceAction).toHaveBeenCalledWith(action);
+    const forwardedAction = nativeModule.onExperienceAction.mock.calls[0][0];
+    forwardedAction({
+      experience: { campaignId: "campaign_checkout", exposureId: "exposure-1" },
+      action: { id: "primary-cta", label: "Continue", type: "OPEN_INTERNAL_ROUTE" },
+    });
+    expect(action).toHaveBeenCalledWith({
+      experience: { campaignId: "campaign_checkout" },
+      action: { id: "primary-cta", label: "Continue", type: "OPEN_INTERNAL_ROUTE" },
+    });
+    expect(action.mock.calls[0][0].experience).not.toHaveProperty("exposureId");
   });
 
   it("forwards the manual Experience lifecycle with the SDK-issued handle", async () => {
@@ -167,7 +176,7 @@ describe("WtsSdk", () => {
     WtsSdk.onExperienceAvailable(available);
     const forwardedAvailable = nativeModule.onExperienceAvailable.mock.calls[0][0];
     forwardedAvailable({
-      experience: { campaignId: "campaign_checkout", exposureId: "exposure-1" },
+      experience: { campaignId: "campaign_checkout" },
       handle: { exposureId: "exposure-1" },
     });
     const handle = available.mock.calls[0][0].handle;
