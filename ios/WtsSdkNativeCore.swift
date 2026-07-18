@@ -27,6 +27,9 @@ public final class WtsSdkNativeCore: NSObject {
                     renderMode: experienceOptions["renderMode"] as? String == "manual"
                         ? .manual
                         : .automatic,
+                    manifestVerificationKeys: experienceOptions[
+                        "manifestVerificationKeys"
+                    ] as? [String: String] ?? [:],
                     allowedInternalRoutes: Set(
                         experienceOptions["allowedInternalRoutes"] as? [String] ?? []
                     ),
@@ -41,10 +44,7 @@ public final class WtsSdkNativeCore: NSObject {
                     ),
                     allowedWebOrigins: Set(
                         experienceOptions["allowedWebOrigins"] as? [String] ?? []
-                    ),
-                    manifestVerificationKeys: experienceOptions[
-                        "manifestVerificationKeys"
-                    ] as? [String: String] ?? [:]
+                    )
                 )
                 try await WtsSDK.shared.configure(appKey: appKey, options: options)
                 await WtsSDK.shared.onExperienceAvailable { [weak self] presentation in
