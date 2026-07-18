@@ -21,7 +21,7 @@ async function checksum(root) {
   return createHash('sha256').update(inner.join('')).digest('hex');
 }
 
-const actual = await checksum('contracts/mobile/v2');
+const actual = await checksum('contracts/mobile/v3');
 if (actual !== metadata.fixtureChecksum) {
   throw new Error(`Mobile contract drift: expected ${metadata.fixtureChecksum}, got ${actual}`);
 }
@@ -29,5 +29,17 @@ const identityActual = await checksum('contracts/identity/v1');
 if (identityActual !== metadata.identityFixtureChecksum) {
   throw new Error(
     `Identity contract drift: expected ${metadata.identityFixtureChecksum}, got ${identityActual}`,
+  );
+}
+const experiencesActual = await checksum('contracts/experiences/v1');
+if (experiencesActual !== metadata.experiencesFixtureChecksum) {
+  throw new Error(
+    `Experiences contract drift: expected ${metadata.experiencesFixtureChecksum}, got ${experiencesActual}`,
+  );
+}
+const testSessionActual = await checksum('contracts/test-sessions/v1');
+if (testSessionActual !== metadata.testSessionFixtureChecksum) {
+  throw new Error(
+    `SDK Test Session contract drift: expected ${metadata.testSessionFixtureChecksum}, got ${testSessionActual}`,
   );
 }

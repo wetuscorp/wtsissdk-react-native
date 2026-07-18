@@ -4,6 +4,32 @@ This is a new [**React Native**](https://reactnative.dev) project, bootstrapped 
 
 > **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
 
+## wts.is SDK Test & Validate
+
+This example keeps normal navigation application-owned. A dashboard pairing QR
+opens a URL in the following form:
+
+```text
+https://<mobile-app-host>/_wts/test/pair?pairing=<dashboard-issued-token>
+```
+
+Detect that route before regular `WtsSdk.handle(url)` processing. Call
+`await WtsSdk.joinTestSession(url)`, show its checks, and return; pairing links
+are not application routes. For ordinary URLs, retain the usual route allowlist
+and web fallback behavior.
+
+After a successful join, call `getTestSessionDiagnostics()` and
+`runTestSessionProbes()`. `probeTestSessionUrl(url)` tests resolver behavior
+without producing an analytics event. A ready `experienceDecision` is an
+isolated manual preview: after its real display or action, call
+`reportTestSessionExperienceInteraction('impression')` or `'action'`. Finish
+with `leaveTestSession()`.
+
+Do not log, persist, or reuse the pairing credential. Its queue is bounded and
+separate from production analytics and Experiences. These APIs require matching
+published React Native, Android, and iOS releases; the `0.3.0-alpha.1` source
+line is not a package-publication claim.
+
 ## Step 1: Start Metro
 
 First, you will need to run **Metro**, the JavaScript build tool for React Native.

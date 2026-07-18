@@ -2,12 +2,17 @@
 
 Official React Native New Architecture wrapper for the wts.is native SDKs. A TypeScript TurboModule spec is implemented by Codegen-backed Swift/ObjC++ and Kotlin modules; the JavaScript layer does not duplicate networking or attribution logic.
 
-> `0.2.0-alpha.1` · Mobile Protocol V2 + Identity V1 · React Native 0.85/0.86 · New Architecture only
+> `0.3.0-alpha.1` source line · Mobile Protocol V3 + Identity V1 + Experiences V1 + SDK Test Session V1 · React Native 0.85/0.86 · New Architecture only
+
+> **Release note:** SDK Test & Validate APIs below require a matching published
+> React Native package and matching published Swift/Android core releases. This
+> document does not claim that `0.3.0-alpha.1` is already published on npm or
+> either native registry.
 
 ## Install
 
 ```bash
-npm install @wetusco/wts-sdk@0.2.0-alpha.1
+npm install @wetusco/wts-sdk@<matching-published-version>
 cd ios && bundle exec pod install
 ```
 
@@ -45,6 +50,117 @@ await WtsSdk.flush(); // optional
 ```
 
 Event scalar types and decimal revenue strings cross the bridge without coercion. iOS deferred resolution returns `null`. The SDK contains no legacy bridge, IDFA/GAID access, pasteboard attribution, fingerprinting, or automatic navigation.
+
+## Screens and Experiences
+
+Screen views are built-in Mobile Protocol V3 events:
+
+```tsx
+await WtsSdk.screen('checkout', {
+  cart_total: 749.90,
+  currency: 'TRY',
+  item_count: 3,
+});
+```
+
+Experiences is disabled by default. Opt in during configuration and pass a
+separate consent state:
+
+```tsx
+await WtsSdk.configure('YOUR_PUBLIC_APP_KEY', {
+  experiences: {
+    enabled: true,
+    renderMode: 'automatic',
+    allowedInternalRoutes: ['/checkout', '/account'],
+    allowedCallbackKeys: ['apply_offer'],
+    allowedDeepLinkHosts: ['go.example.com'],
+    allowedDeepLinkSchemes: ['example'],
+    allowedWebOrigins: ['https://www.example.com'],
+  },
+});
+
+await WtsSdk.setExperienceConsent('contextual');
+```
+
+Use `personalized` only after profile consent. `pending` performs no
+Experience request and `denied` clears local state and queued interactions.
+Native cores own rendering, persistent retry, safe actions and
+visibility-qualified impressions. Manual presentation and health inspection
+are exposed through `presentNextExperience()`,
+`dismissCurrentExperience()` and `getExperienceDiagnostics()`. Generated
+TurboModule event emitters expose `onExperienceAvailable` and
+`onExperienceAction` without a legacy bridge.
+
+For an unpublished device test, copy
+`(await WtsSdk.getExperienceDiagnostics()).testDeviceToken` into the dashboard
+test panel for the matching Mobile App. The random token contains no install,
+user, or profile identifier, and test traffic is excluded from customer
+analytics and usage.
+
+## SDK Test & Validate
+
+SDK Test & Validate is a dashboard-issued, short-lived validation session. Its
+bounded retry queue is isolated from production analytics, identities,
+attribution, and Experiences. Do not hardcode, log, or persist the pairing URL
+or token outside the SDK.
+
+The dashboard QR code uses this canonical form:
+
+```text
+https://<mobile-app-host>/_wts/test/pair?pairing=<dashboard-issued-token>
+```
+
+Detect that pairing route before normal React Native link handling. A pairing
+URL must join the isolated session and must not be sent to `handle`.
+
+```tsx
+function isWtsTestPairing(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && parsed.pathname === '/_wts/test/pair';
+  } catch {
+    return false;
+  }
+}
+
+async function onIncomingUrl(url: string) {
+  if (isWtsTestPairing(url)) {
+    const joined = await WtsSdk.joinTestSession(url);
+    showSdkTestChecks(joined.checks);
+    return;
+  }
+
+  // Normal production behavior stays unchanged.
+  try {
+    const link = await WtsSdk.handle(url);
+    navigation.navigate(routeFor(link.path), link.parameters);
+  } catch {
+    await Linking.openURL(url);
+  }
+}
+```
+
+Use the dashboard-selected plan and isolated diagnostics without creating
+normal analytics:
+
+```tsx
+const diagnostics = await WtsSdk.getTestSessionDiagnostics();
+const probes = await WtsSdk.runTestSessionProbes();
+
+// This is a test-only manual preview. It is not passed to the normal native
+// Experiences renderer.
+if (probes.experienceDecision?.outcome === 'ready') {
+  await presentTestExperiencePreview(probes.experienceDecision);
+  await WtsSdk.reportTestSessionExperienceInteraction('impression');
+}
+```
+
+Call `reportTestSessionExperienceInteraction('action')` only after the
+corresponding real action in that preview. It is accepted only after a ready
+isolated decision; production Experience lifecycle signals are never mirrored
+to the test session. Use `probeTestSessionUrl(url)` for an event-free resolver
+check and `leaveTestSession()` when the operator finishes. Expiry also clears
+the session.
 
 ## User identity and reported attribution
 

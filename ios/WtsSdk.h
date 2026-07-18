@@ -3,7 +3,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface WtsSdk : NSObject <NativeWtsSdkSpec>
+@interface WtsSdk : NativeWtsSdkSpecBase <NativeWtsSdkSpec>
 @end
 
 NS_ASSUME_NONNULL_END

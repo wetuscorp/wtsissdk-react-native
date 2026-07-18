@@ -1,6 +1,25 @@
-import NativeWtsSdk, { type DeepLinkResult } from "./NativeWtsSdk";
+import NativeWtsSdk, {
+  type DeepLinkResult,
+  type ExperienceActionEvent,
+  type ExperienceActionResult,
+  type ExperienceDiagnosticsResult,
+  type ExperienceResult,
+  type ExperienceTranslationResult,
+  type TestSessionCheckResult,
+  type TestSessionDiagnosticsResult,
+  type TestSessionJoinResult,
+  type TestSessionProbeResult,
+  type TestSessionProbeRunResult,
+} from "./NativeWtsSdk";
 
-export type { DeepLinkResult };
+export type {
+  DeepLinkResult,
+  ExperienceActionEvent,
+  ExperienceActionResult,
+  ExperienceResult,
+  ExperienceTranslationResult,
+  TestSessionCheckResult,
+};
 export type WtsScalar = string | number | boolean;
 export type WtsRevenue = { amount: string; currency: string };
 export type WtsUserValue = WtsScalar | string[] | Date;
@@ -15,6 +34,47 @@ export type WtsReportedAttribution = {
   medium?: string;
   campaign?: string;
   externalRef?: string;
+};
+export type WtsExperienceConsent = "pending" | "contextual" | "personalized" | "denied";
+export type WtsExperienceRenderMode = "automatic" | "manual";
+export type WtsExperienceOptions = {
+  enabled?: boolean;
+  renderMode?: WtsExperienceRenderMode;
+  allowedInternalRoutes?: string[];
+  allowedCallbackKeys?: string[];
+  allowedDeepLinkHosts?: string[];
+  allowedDeepLinkSchemes?: string[];
+  allowedWebOrigins?: string[];
+};
+export type WtsConfigureOptions = {
+  apiBaseUrl?: string;
+  collectorBaseUrl?: string;
+  experiences?: WtsExperienceOptions;
+};
+export type WtsExperienceDiagnostics = ExperienceDiagnosticsResult & {
+  consent: WtsExperienceConsent;
+};
+export type WtsTestSessionJoin = TestSessionJoinResult;
+export type WtsTestSessionDiagnostics = TestSessionDiagnosticsResult;
+export type WtsTestSessionProbeLink = {
+  id: string;
+  path: string;
+  parameters: Record<string, unknown>;
+};
+export type WtsTestSessionProbe = Omit<TestSessionProbeResult, "link"> & {
+  link?: WtsTestSessionProbeLink;
+};
+export type WtsTestSessionExperienceDecision = {
+  outcome: string;
+  reason?: string;
+  testGrant?: Record<string, unknown>;
+  decision?: Record<string, unknown>;
+};
+export type WtsTestSessionProbeRun = Omit<
+  TestSessionProbeRunResult,
+  "experienceDecisionJson"
+> & {
+  experienceDecision?: WtsTestSessionExperienceDecision;
 };
 
 export class WtsSdkError extends Error {
@@ -135,10 +195,43 @@ function validateUserUpdate(update: WtsUserUpdate) {
   return { set, setOnce, unset, increment };
 }
 
+function parseJsonObject(value: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function optionalJsonObject(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 export const WtsSdk = {
-  configure(appKey: string, apiBaseUrl?: string) {
+  configure(appKey: string, options: WtsConfigureOptions = {}) {
     if (appKey.trim().length < 8) throw new TypeError("The wts.is app key is invalid.");
-    return wrapNativePromise(NativeWtsSdk.configure(appKey.trim(), apiBaseUrl ?? null));
+    const experiences = options.experiences ?? {};
+    return wrapNativePromise(
+      NativeWtsSdk.configure(
+        appKey.trim(),
+        options.apiBaseUrl ?? null,
+        options.collectorBaseUrl ?? null,
+        {
+          enabled: experiences.enabled ?? false,
+          renderMode: experiences.renderMode ?? "automatic",
+          allowedInternalRoutes: experiences.allowedInternalRoutes ?? [],
+          allowedCallbackKeys: experiences.allowedCallbackKeys ?? [],
+          allowedDeepLinkHosts: experiences.allowedDeepLinkHosts ?? [],
+          allowedDeepLinkSchemes: experiences.allowedDeepLinkSchemes ?? [],
+          allowedWebOrigins: experiences.allowedWebOrigins ?? [],
+        },
+      ),
+    );
   },
   handle(url: string) {
     return wrapNativePromise(NativeWtsSdk.handle(url), url);
@@ -197,7 +290,89 @@ export const WtsSdk = {
       ),
     );
   },
+  screen(name: string, properties: Record<string, WtsScalar> = {}) {
+    const normalized = name.trim();
+    if (!normalized || normalized.length > 120) {
+      throw new TypeError("Screen name must contain 1 to 120 characters.");
+    }
+    validateEventProperties(properties);
+    return wrapNativePromise(NativeWtsSdk.screen(normalized, properties));
+  },
+  setExperienceConsent(consent: WtsExperienceConsent) {
+    return wrapNativePromise(NativeWtsSdk.setExperienceConsent(consent));
+  },
+  presentNextExperience() {
+    return wrapNativePromise(NativeWtsSdk.presentNextExperience());
+  },
+  dismissCurrentExperience() {
+    return wrapNativePromise(NativeWtsSdk.dismissCurrentExperience());
+  },
+  getExperienceDiagnostics() {
+    return wrapNativePromise(
+      NativeWtsSdk.getExperienceDiagnostics() as Promise<WtsExperienceDiagnostics>,
+    );
+  },
+  joinTestSession(pairing: string) {
+    const normalized = pairing.trim();
+    if (!normalized) throw new TypeError("A pairing URL, token, or code is required.");
+    return wrapNativePromise(NativeWtsSdk.joinTestSession(normalized));
+  },
+  leaveTestSession() {
+    return wrapNativePromise(NativeWtsSdk.leaveTestSession());
+  },
+  getTestSessionDiagnostics() {
+    return wrapNativePromise(NativeWtsSdk.getTestSessionDiagnostics());
+  },
+  async probeTestSessionUrl(url: string): Promise<WtsTestSessionProbe> {
+    const result = await wrapNativePromise(NativeWtsSdk.probeTestSessionUrl(url), url);
+    return {
+      ...result,
+      link: result.link
+        ? {
+            id: result.link.id,
+            path: result.link.path,
+            parameters: parseJsonObject(result.link.parametersJson),
+          }
+        : undefined,
+    };
+  },
+  async runTestSessionProbes(): Promise<WtsTestSessionProbeRun> {
+    const result = await wrapNativePromise(NativeWtsSdk.runTestSessionProbes());
+    const payload = result.experienceDecisionJson
+      ? parseJsonObject(result.experienceDecisionJson)
+      : undefined;
+    return {
+      accepted: result.accepted,
+      emitted: result.emitted,
+      skipped: result.skipped,
+      pendingSignals: result.pendingSignals,
+      experienceDecision: payload
+        ? {
+            outcome: typeof payload.outcome === "string" ? payload.outcome : "unavailable",
+            reason: typeof payload.reason === "string" ? payload.reason : undefined,
+            testGrant: optionalJsonObject(payload.testGrant),
+            decision: optionalJsonObject(payload.decision),
+          }
+        : undefined,
+    };
+  },
+  reportTestSessionExperienceInteraction(interaction: "impression" | "action") {
+    if (interaction !== "impression" && interaction !== "action") {
+      throw new TypeError("Test Experience interactions must be impression or action.");
+    }
+    return wrapNativePromise(NativeWtsSdk.reportTestSessionExperienceInteraction(interaction));
+  },
+  onExperienceAvailable(handler: (experience: ExperienceResult) => void | Promise<void>) {
+    return NativeWtsSdk.onExperienceAvailable(handler);
+  },
+  onExperienceAction(handler: (event: ExperienceActionEvent) => void | Promise<void>) {
+    return NativeWtsSdk.onExperienceAction(handler);
+  },
   flush() {
     return wrapNativePromise(NativeWtsSdk.flush());
   },
 };
+
+function validateEventProperties(properties: Record<string, WtsScalar>) {
+  validateEvent("screen_view", properties);
+}
