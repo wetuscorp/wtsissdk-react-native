@@ -27,6 +27,9 @@ public final class WtsSdkNativeCore: NSObject {
                     renderMode: experienceOptions["renderMode"] as? String == "manual"
                         ? .manual
                         : .automatic,
+                    manifestVerificationKeys: experienceOptions[
+                        "manifestVerificationKeys"
+                    ] as? [String: String] ?? [:],
                     allowedInternalRoutes: Set(
                         experienceOptions["allowedInternalRoutes"] as? [String] ?? []
                     ),
@@ -44,8 +47,8 @@ public final class WtsSdkNativeCore: NSObject {
                     )
                 )
                 try await WtsSDK.shared.configure(appKey: appKey, options: options)
-                await WtsSDK.shared.onExperienceAvailable { [weak self] experience in
-                    self?.onExperienceAvailable?(experience.dictionary)
+                await WtsSDK.shared.onExperienceAvailable { [weak self] presentation in
+                    self?.onExperienceAvailable?(presentation.dictionary)
                 }
                 await WtsSDK.shared.onExperienceAction { [weak self] experience, action in
                     self?.onExperienceAction?([
@@ -256,6 +259,74 @@ public final class WtsSdkNativeCore: NSObject {
         }
     }
 
+    public func acknowledgeExperienceRender(
+        _ exposureId: String,
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            let handle = WtsExperiencePresentationHandle(exposureId: exposureId)
+            resolve(await WtsSDK.shared.acknowledgeExperienceRender(handle).dictionary)
+        }
+    }
+
+    public func acknowledgeExperienceImpression(
+        _ exposureId: String,
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            let handle = WtsExperiencePresentationHandle(exposureId: exposureId)
+            resolve(await WtsSDK.shared.acknowledgeExperienceImpression(handle).dictionary)
+        }
+    }
+
+    public func reportExperienceAction(
+        _ exposureId: String,
+        actionId: String,
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task {
+            let handle = WtsExperiencePresentationHandle(exposureId: exposureId)
+            resolve(
+                await WtsSDK.shared.reportExperienceAction(handle, actionId: actionId).dictionary
+            )
+        }
+    }
+
+    public func dismissExperience(
+        _ exposureId: String,
+        reason: String,
+        failureCode: String?,
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        let parsedReason: WtsExperienceDismissReason
+        switch reason {
+        case "dismissed": parsedReason = .dismissed
+        case "autoClosed": parsedReason = .autoClosed
+        case "renderFailed": parsedReason = .renderFailed
+        default:
+            reject(
+                "INVALID_EXPERIENCE_DISMISSAL_REASON",
+                "Unsupported Experience dismissal reason.",
+                nil
+            )
+            return
+        }
+        Task {
+            let handle = WtsExperiencePresentationHandle(exposureId: exposureId)
+            resolve(
+                await WtsSDK.shared.dismissExperience(
+                    handle,
+                    reason: parsedReason,
+                    failureCode: failureCode
+                ).dictionary
+            )
+        }
+    }
+
     public func joinTestSession(
         _ pairing: String,
         resolve: @escaping RCTPromiseResolveBlock,
@@ -360,7 +431,6 @@ private extension WtsExperience {
             "campaignVersionId": campaignVersionId,
             "assignmentId": assignmentId,
             "variantId": variantId,
-            "exposureId": exposureId,
             "placement": placement.rawValue,
             "priority": priority,
             "translations": content.translations.map { locale, value in
@@ -388,6 +458,25 @@ private extension WtsExperience {
             result["assetUrl"] = assetURL.absoluteString
         }
         return result
+    }
+}
+
+private extension WtsExperienceManualPresentation {
+    var dictionary: [String: Any] {
+        [
+            "experience": experience.dictionary,
+            "handle": ["exposureId": handle.exposureId],
+        ]
+    }
+}
+
+private extension WtsExperienceLifecycleOutcome {
+    var dictionary: [String: Any] {
+        [
+            "accepted": accepted,
+            "idempotent": idempotent,
+            "code": code as Any,
+        ]
     }
 }
 

@@ -1,8 +1,20 @@
 # Changelog
 
-> Entries for the `0.3.0-alpha.1` source line below are not an npm or native
-> registry publication claim. SDK Test & Validate requires matching published
-> React Native, Swift, and Android releases.
+## 0.4.0-alpha.1
+
+- Pins Android `co.wetus:wts-sdk:0.4.0-alpha.1` and iOS `WtsSDK
+  0.4.0-alpha.1` exactly; keep the React Native wrapper and both native cores
+  on this matching version.
+- Added verified Experiences manifest delivery: the wrapper supplies a pinned
+  Ed25519 public-key ring to the native cores, which verify the signed payload
+  before parsing it. Unverified outer manifest content is not used.
+- Replaced the ambiguous manual-presentation callback with an opaque
+  presentation handle and explicit render, impression, action, and dismissal
+  lifecycle acknowledgements.
+- Removed delivery correlation identifiers from public Experience payloads;
+  manual lifecycle correlation remains internal to the opaque handle.
+- Preserved SDK Test Session V1 pairing, probes, diagnostics, and isolated
+  test-only Experience reporting.
 
 ## 0.3.0-alpha.1
 
