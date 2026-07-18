@@ -5,7 +5,11 @@ import co.wetus.sdk.WtsDeepLink
 import co.wetus.sdk.WtsExperienceConsent
 import co.wetus.sdk.WtsExperience
 import co.wetus.sdk.WtsExperienceAction
+import co.wetus.sdk.WtsExperienceDismissReason
+import co.wetus.sdk.WtsExperienceLifecycleOutcome
+import co.wetus.sdk.WtsExperienceManualPresentation
 import co.wetus.sdk.WtsExperienceOptions
+import co.wetus.sdk.WtsExperiencePresentationHandle
 import co.wetus.sdk.WtsExperienceRenderMode
 import co.wetus.sdk.WtsOptions
 import co.wetus.sdk.WtsProfileConsent
@@ -73,12 +77,13 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
                         allowedDeepLinkHosts = raw.stringSet("allowedDeepLinkHosts"),
                         allowedDeepLinkSchemes = raw.stringSet("allowedDeepLinkSchemes"),
                         allowedWebOrigins = raw.stringSet("allowedWebOrigins"),
+                        manifestVerificationKeys = raw.stringMap("manifestVerificationKeys"),
                     ),
                 ),
             )
-            sdk.onExperienceAvailable { experience ->
+            sdk.onExperienceAvailable { presentation ->
                 scope.launch {
-                    emitOnExperienceAvailable(experience.toWritableMap())
+                    emitOnExperienceAvailable(presentation.toWritableMap())
                 }
             }
             sdk.onExperienceAction { experience, action ->
@@ -222,6 +227,42 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
         }.fold(promise::resolve) { promise.reject(it.wtsCode(), it) }
     }
 
+    override fun acknowledgeExperienceRender(exposureId: String, promise: Promise) = launch(promise) {
+        WtsSdk.shared().acknowledgeExperienceRender(
+            WtsExperiencePresentationHandle.fromExposureId(exposureId),
+        ).toWritableMap()
+    }
+
+    override fun acknowledgeExperienceImpression(exposureId: String, promise: Promise) = launch(promise) {
+        WtsSdk.shared().acknowledgeExperienceImpression(
+            WtsExperiencePresentationHandle.fromExposureId(exposureId),
+        ).toWritableMap()
+    }
+
+    override fun reportExperienceAction(
+        exposureId: String,
+        actionId: String,
+        promise: Promise,
+    ) = launch(promise) {
+        WtsSdk.shared().reportExperienceAction(
+            WtsExperiencePresentationHandle.fromExposureId(exposureId),
+            actionId,
+        ).toWritableMap()
+    }
+
+    override fun dismissExperience(
+        exposureId: String,
+        reason: String,
+        failureCode: String?,
+        promise: Promise,
+    ) = launch(promise) {
+        WtsSdk.shared().dismissExperience(
+            WtsExperiencePresentationHandle.fromExposureId(exposureId),
+            reason.toExperienceDismissReason(),
+            failureCode,
+        ).toWritableMap()
+    }
+
     override fun joinTestSession(pairing: String, promise: Promise) = launch(promise) {
         WtsSdk.shared().joinTestSession(
             WtsTestSessionPairing.from(pairing),
@@ -344,6 +385,26 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
         putDouble("delaySeconds", content.delaySeconds)
         content.autoCloseSeconds?.let { putDouble("autoCloseSeconds", it) }
         assetUrl?.let { putString("assetUrl", it) }
+    }
+
+    private fun WtsExperienceManualPresentation.toWritableMap() = WritableNativeMap().apply {
+        putMap("experience", experience.toWritableMap())
+        putMap("handle", WritableNativeMap().apply {
+            putString("exposureId", handle.exposureId)
+        })
+    }
+
+    private fun WtsExperienceLifecycleOutcome.toWritableMap() = WritableNativeMap().apply {
+        putBoolean("accepted", accepted)
+        putBoolean("idempotent", idempotent)
+        code?.let { putString("code", it) } ?: putNull("code")
+    }
+
+    private fun String.toExperienceDismissReason(): WtsExperienceDismissReason = when (this) {
+        "dismissed" -> WtsExperienceDismissReason.DISMISSED
+        "autoClosed" -> WtsExperienceDismissReason.AUTO_CLOSED
+        "renderFailed" -> WtsExperienceDismissReason.RENDER_FAILED
+        else -> throw IllegalArgumentException("Unsupported Experience dismissal reason.")
     }
 
     private fun WtsExperienceAction.toWritableMap() = WritableNativeMap().apply {
@@ -469,3 +530,14 @@ private fun Throwable.wtsCode(): String =
 
 private fun Map<String, Any?>.stringSet(key: String): Set<String> =
     (this[key] as? List<*>)?.mapNotNull { it as? String }?.toSet() ?: emptySet()
+
+private fun Map<String, Any?>.stringMap(key: String): Map<String, String> =
+    (this[key] as? Map<*, *>)
+        ?.mapNotNull { (entryKey, value) ->
+            val normalizedKey = entryKey as? String
+            val normalizedValue = value as? String
+            if (normalizedKey == null || normalizedValue == null) null
+            else normalizedKey to normalizedValue
+        }
+        ?.toMap()
+        ?: emptyMap()

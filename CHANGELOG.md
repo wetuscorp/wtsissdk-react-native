@@ -1,8 +1,19 @@
 # Changelog
 
-> Entries for the `0.3.0-alpha.1` source line below are not an npm or native
-> registry publication claim. SDK Test & Validate requires matching published
-> React Native, Swift, and Android releases.
+> SDK Test & Validate and Experiences require matching published React Native,
+> Swift, and Android releases. Native core `0.4.0-alpha.1` artifacts must be
+> available before the React Native wrapper is published.
+
+## 0.4.0-alpha.1
+
+- Added verified Experiences manifest delivery: the wrapper supplies a pinned
+  Ed25519 public-key ring to the native cores, which verify the signed payload
+  before parsing it. Unverified outer manifest content is not used.
+- Replaced the ambiguous manual-presentation callback with an opaque
+  presentation handle and explicit render, impression, action, and dismissal
+  lifecycle acknowledgements.
+- Preserved SDK Test Session V1 pairing, probes, diagnostics, and isolated
+  test-only Experience reporting.
 
 ## 0.3.0-alpha.1
 

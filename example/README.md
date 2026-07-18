@@ -27,8 +27,8 @@ with `leaveTestSession()`.
 
 Do not log, persist, or reuse the pairing credential. Its queue is bounded and
 separate from production analytics and Experiences. These APIs require matching
-published React Native, Android, and iOS releases; the `0.3.0-alpha.1` source
-line is not a package-publication claim.
+published React Native, Android, and iOS releases from the
+`0.4.0-alpha.1` release line.
 
 ## Step 1: Start Metro
 

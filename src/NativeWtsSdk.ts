@@ -54,6 +54,21 @@ export type ExperienceActionEvent = {
   action: ExperienceActionResult;
 };
 
+export type ExperiencePresentationHandleResult = {
+  exposureId: string;
+};
+
+export type ExperienceManualPresentationResult = {
+  experience: ExperienceResult;
+  handle: ExperiencePresentationHandleResult;
+};
+
+export type ExperienceLifecycleOutcomeResult = {
+  accepted: boolean;
+  idempotent: boolean;
+  code?: string;
+};
+
 export type TestSessionCheckResult = {
   key: string;
   status: string;
@@ -108,7 +123,7 @@ export type TestSessionProbeRunResult = {
 };
 
 export interface Spec extends TurboModule {
-  readonly onExperienceAvailable: CodegenTypes.EventEmitter<ExperienceResult>;
+  readonly onExperienceAvailable: CodegenTypes.EventEmitter<ExperienceManualPresentationResult>;
   readonly onExperienceAction: CodegenTypes.EventEmitter<ExperienceActionEvent>;
   configure(
     appKey: string,
@@ -145,6 +160,17 @@ export interface Spec extends TurboModule {
   presentNextExperience(): Promise<boolean>;
   dismissCurrentExperience(): Promise<boolean>;
   getExperienceDiagnostics(): Promise<ExperienceDiagnosticsResult>;
+  acknowledgeExperienceRender(exposureId: string): Promise<ExperienceLifecycleOutcomeResult>;
+  acknowledgeExperienceImpression(exposureId: string): Promise<ExperienceLifecycleOutcomeResult>;
+  reportExperienceAction(
+    exposureId: string,
+    actionId: string,
+  ): Promise<ExperienceLifecycleOutcomeResult>;
+  dismissExperience(
+    exposureId: string,
+    reason: string,
+    failureCode: string | null,
+  ): Promise<ExperienceLifecycleOutcomeResult>;
   joinTestSession(pairing: string): Promise<TestSessionJoinResult>;
   leaveTestSession(): Promise<boolean>;
   getTestSessionDiagnostics(): Promise<TestSessionDiagnosticsResult>;

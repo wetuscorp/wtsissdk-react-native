@@ -2,12 +2,12 @@
 
 Official React Native New Architecture wrapper for the wts.is native SDKs. A TypeScript TurboModule spec is implemented by Codegen-backed Swift/ObjC++ and Kotlin modules; the JavaScript layer does not duplicate networking or attribution logic.
 
-> `0.3.0-alpha.1` source line · Mobile Protocol V3 + Identity V1 + Experiences V1 + SDK Test Session V1 · React Native 0.85/0.86 · New Architecture only
+> `0.4.0-alpha.1` release line · Mobile Protocol V3 + Identity V1 + Experiences V1 + SDK Test Session V1 · React Native 0.85/0.86 · New Architecture only
 
-> **Release note:** SDK Test & Validate APIs below require a matching published
-> React Native package and matching published Swift/Android core releases. This
-> document does not claim that `0.3.0-alpha.1` is already published on npm or
-> either native registry.
+> **Release compatibility:** SDK Test & Validate and Experiences require the
+> matching `0.4.0-alpha.1` React Native package and matching published
+> Swift/Android core releases. The wrapper pins those native dependencies
+> exactly, so publish the native cores before this package.
 
 ## Install
 
@@ -76,6 +76,9 @@ await WtsSdk.configure('YOUR_PUBLIC_APP_KEY', {
     allowedDeepLinkHosts: ['go.example.com'],
     allowedDeepLinkSchemes: ['example'],
     allowedWebOrigins: ['https://www.example.com'],
+    manifestVerificationKeys: {
+      'experience-key-2026-07': 'BASE64_SPKI_DER_ED25519_PUBLIC_KEY',
+    },
   },
 });
 
@@ -85,11 +88,43 @@ await WtsSdk.setExperienceConsent('contextual');
 Use `personalized` only after profile consent. `pending` performs no
 Experience request and `denied` clears local state and queued interactions.
 Native cores own rendering, persistent retry, safe actions and
-visibility-qualified impressions. Manual presentation and health inspection
-are exposed through `presentNextExperience()`,
-`dismissCurrentExperience()` and `getExperienceDiagnostics()`. Generated
-TurboModule event emitters expose `onExperienceAvailable` and
-`onExperienceAction` without a legacy bridge.
+visibility-qualified impressions. Retrieve the public key ring from the
+authenticated workspace API,
+`GET /api/v1/organizations/:organizationId/experiences/manifest-verification-keys`,
+then pin the returned `kid` → base64 SPKI DER values in app configuration.
+Never derive these values from, or include, server signing secrets in a client.
+The native core ignores the unsigned outer manifest and verifies its signed
+payload before it is parsed.
+
+`automatic` keeps presentation inside the native core. In `manual` mode,
+`onExperienceAvailable` receives typed renderable content and one opaque
+SDK-issued handle only after a candidate is queued. Delivery identifiers never
+enter the public manual payload. The host owns UI rendering and reports the
+actual lifecycle:
+
+```tsx
+const subscription = WtsSdk.onExperienceAvailable(async ({ experience, handle }) => {
+  const render = await WtsSdk.acknowledgeExperienceRender(handle);
+  if (!render.accepted) return;
+
+  const result = await showYourExperienceUi(experience);
+  if (result.wasVisibleForOneSecond) {
+    await WtsSdk.acknowledgeExperienceImpression(handle);
+  }
+  if (result.actionId) {
+    await WtsSdk.reportExperienceAction(handle, result.actionId);
+  } else {
+    await WtsSdk.dismissExperience(handle);
+  }
+});
+```
+
+Call `failExperiencePresentation(handle, failureCode)` when the manual renderer
+cannot show a candidate. Do not persist or reconstruct handles.
+`presentNextExperience()` and `dismissCurrentExperience()` belong to automatic
+rendering; manual mode never asks the native renderer to present or emits a
+second availability callback. `onExperienceAction` remains available for safe
+action callbacks without a legacy bridge.
 
 For an unpublished device test, copy
 `(await WtsSdk.getExperienceDiagnostics()).testDeviceToken` into the dashboard

@@ -72,6 +72,37 @@ RCT_EXPORT_MODULE()
   [_core getExperienceDiagnostics:resolve reject:reject];
 }
 
+- (void)acknowledgeExperienceRender:(NSString *)exposureId
+                             resolve:(RCTPromiseResolveBlock)resolve
+                              reject:(RCTPromiseRejectBlock)reject {
+  [_core acknowledgeExperienceRender:exposureId resolve:resolve reject:reject];
+}
+
+- (void)acknowledgeExperienceImpression:(NSString *)exposureId
+                                 resolve:(RCTPromiseResolveBlock)resolve
+                                  reject:(RCTPromiseRejectBlock)reject {
+  [_core acknowledgeExperienceImpression:exposureId resolve:resolve reject:reject];
+}
+
+- (void)reportExperienceAction:(NSString *)exposureId
+                       actionId:(NSString *)actionId
+                        resolve:(RCTPromiseResolveBlock)resolve
+                         reject:(RCTPromiseRejectBlock)reject {
+  [_core reportExperienceAction:exposureId actionId:actionId resolve:resolve reject:reject];
+}
+
+- (void)dismissExperience:(NSString *)exposureId
+                   reason:(NSString *)reason
+              failureCode:(NSString * _Nullable)failureCode
+                  resolve:(RCTPromiseResolveBlock)resolve
+                   reject:(RCTPromiseRejectBlock)reject {
+  [_core dismissExperience:exposureId
+                    reason:reason
+               failureCode:failureCode
+                   resolve:resolve
+                    reject:reject];
+}
+
 - (void)joinTestSession:(NSString *)pairing
                  resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject {

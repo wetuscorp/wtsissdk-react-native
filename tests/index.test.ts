@@ -21,6 +21,23 @@ const nativeModule = {
     presenting: false,
     testDeviceToken: "test-device-token",
   }),
+  acknowledgeExperienceRender: jest.fn().mockResolvedValue({
+    accepted: true,
+    idempotent: false,
+  }),
+  acknowledgeExperienceImpression: jest.fn().mockResolvedValue({
+    accepted: true,
+    idempotent: true,
+  }),
+  reportExperienceAction: jest.fn().mockResolvedValue({
+    accepted: true,
+    idempotent: false,
+  }),
+  dismissExperience: jest.fn().mockResolvedValue({
+    accepted: false,
+    idempotent: false,
+    code: "RENDER_FAILED",
+  }),
   joinTestSession: jest.fn().mockResolvedValue({
     accepted: true,
     joined: true,
@@ -91,6 +108,7 @@ describe("WtsSdk", () => {
         enabled: true,
         renderMode: "automatic",
         allowedInternalRoutes: ["/checkout"],
+        manifestVerificationKeys: { "experience-key-2026-07": "base64-spki-der" },
       },
     });
 
@@ -102,6 +120,7 @@ describe("WtsSdk", () => {
         enabled: true,
         renderMode: "automatic",
         allowedInternalRoutes: ["/checkout"],
+        manifestVerificationKeys: { "experience-key-2026-07": "base64-spki-der" },
       }),
     );
   });
@@ -115,15 +134,83 @@ describe("WtsSdk", () => {
     });
   });
 
-  it("subscribes to generated Experience availability and action events", () => {
+  it("delivers an opaque manual Experience handle without triggering native automatic presentation", async () => {
     const available = jest.fn();
     const action = jest.fn();
 
+    await WtsSdk.configure("public-app-key", {
+      experiences: { enabled: true, renderMode: "manual" },
+    });
     WtsSdk.onExperienceAvailable(available);
     WtsSdk.onExperienceAction(action);
 
-    expect(nativeModule.onExperienceAvailable).toHaveBeenCalledWith(available);
+    const forwardedAvailable = nativeModule.onExperienceAvailable.mock.calls[0][0];
+    forwardedAvailable({
+      experience: { campaignId: "campaign_checkout", exposureId: "exposure-1" },
+      handle: { exposureId: "exposure-1" },
+    });
+
+    const presentation = available.mock.calls[0][0];
+    expect(presentation).toMatchObject({
+      experience: { campaignId: "campaign_checkout" },
+    });
+    expect(presentation.experience).not.toHaveProperty("exposureId");
+    expect(presentation.handle).not.toHaveProperty("exposureId");
+    expect(Object.keys(presentation.handle)).toEqual([]);
+    expect(nativeModule.presentNextExperience).not.toHaveBeenCalled();
+    expect(nativeModule.dismissCurrentExperience).not.toHaveBeenCalled();
     expect(nativeModule.onExperienceAction).toHaveBeenCalledWith(action);
+  });
+
+  it("forwards the manual Experience lifecycle with the SDK-issued handle", async () => {
+    const available = jest.fn();
+    WtsSdk.onExperienceAvailable(available);
+    const forwardedAvailable = nativeModule.onExperienceAvailable.mock.calls[0][0];
+    forwardedAvailable({
+      experience: { campaignId: "campaign_checkout", exposureId: "exposure-1" },
+      handle: { exposureId: "exposure-1" },
+    });
+    const handle = available.mock.calls[0][0].handle;
+
+    await expect(WtsSdk.acknowledgeExperienceRender(handle)).resolves.toEqual({
+      accepted: true,
+      idempotent: false,
+    });
+    await expect(WtsSdk.acknowledgeExperienceImpression(handle)).resolves.toEqual({
+      accepted: true,
+      idempotent: true,
+    });
+    await expect(WtsSdk.reportExperienceAction(handle, "primary-cta")).resolves.toEqual({
+      accepted: true,
+      idempotent: false,
+    });
+    await expect(
+      WtsSdk.dismissExperience(handle, {
+        reason: "renderFailed",
+        failureCode: "RENDER_EXCEPTION",
+      }),
+    ).resolves.toEqual({
+      accepted: false,
+      idempotent: false,
+      code: "RENDER_FAILED",
+    });
+
+    expect(nativeModule.acknowledgeExperienceRender).toHaveBeenCalledWith("exposure-1");
+    expect(nativeModule.acknowledgeExperienceImpression).toHaveBeenCalledWith("exposure-1");
+    expect(nativeModule.reportExperienceAction).toHaveBeenCalledWith("exposure-1", "primary-cta");
+    expect(nativeModule.dismissExperience).toHaveBeenCalledWith(
+      "exposure-1",
+      "renderFailed",
+      "RENDER_EXCEPTION",
+    );
+    expect(nativeModule.reportTestSessionExperienceInteraction).not.toHaveBeenCalled();
+  });
+
+  it("rejects a forged manual Experience handle before native forwarding", () => {
+    expect(() =>
+      WtsSdk.acknowledgeExperienceRender({} as never),
+    ).toThrow("Experience presentation handles must be issued by this SDK instance.");
+    expect(nativeModule.acknowledgeExperienceRender).not.toHaveBeenCalled();
   });
 
   it("exposes the PII-free native test device token in diagnostics", async () => {

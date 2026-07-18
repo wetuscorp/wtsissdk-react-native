@@ -3,6 +3,8 @@ import NativeWtsSdk, {
   type ExperienceActionEvent,
   type ExperienceActionResult,
   type ExperienceDiagnosticsResult,
+  type ExperienceLifecycleOutcomeResult,
+  type ExperienceManualPresentationResult,
   type ExperienceResult,
   type ExperienceTranslationResult,
   type TestSessionCheckResult,
@@ -16,6 +18,7 @@ export type {
   DeepLinkResult,
   ExperienceActionEvent,
   ExperienceActionResult,
+  ExperienceLifecycleOutcomeResult,
   ExperienceResult,
   ExperienceTranslationResult,
   TestSessionCheckResult,
@@ -45,6 +48,8 @@ export type WtsExperienceOptions = {
   allowedDeepLinkHosts?: string[];
   allowedDeepLinkSchemes?: string[];
   allowedWebOrigins?: string[];
+  /** `kid` → base64 SPKI DER Ed25519 public key. */
+  manifestVerificationKeys?: Record<string, string>;
 };
 export type WtsConfigureOptions = {
   apiBaseUrl?: string;
@@ -54,6 +59,24 @@ export type WtsConfigureOptions = {
 export type WtsExperienceDiagnostics = ExperienceDiagnosticsResult & {
   consent: WtsExperienceConsent;
 };
+declare const wtsExperiencePresentationHandleBrand: unique symbol;
+
+/**
+ * An opaque, SDK-issued handle for a manual Experience presentation.
+ *
+ * The handle intentionally exposes no delivery identifier. Keep it only for
+ * the lifecycle of its presentation and pass it back to the SDK methods below.
+ */
+export type WtsExperiencePresentationHandle = Readonly<{
+  [wtsExperiencePresentationHandleBrand]: never;
+}>;
+export type WtsExperienceManualContent = Omit<ExperienceResult, "exposureId">;
+export type WtsExperienceManualPresentation = {
+  experience: WtsExperienceManualContent;
+  handle: WtsExperiencePresentationHandle;
+};
+export type WtsExperienceLifecycleOutcome = ExperienceLifecycleOutcomeResult;
+export type WtsExperienceDismissReason = "dismissed" | "autoClosed" | "renderFailed";
 export type WtsTestSessionJoin = TestSessionJoinResult;
 export type WtsTestSessionDiagnostics = TestSessionDiagnosticsResult;
 export type WtsTestSessionProbeLink = {
@@ -99,6 +122,32 @@ function wrapNativePromise<T>(promise: Promise<T>, fallbackUrl?: string): Promis
       fallbackUrl,
     );
   });
+}
+
+const manualExperienceHandleIds = new WeakMap<object, string>();
+
+function manualExperienceHandleFromNative(exposureId: string): WtsExperiencePresentationHandle {
+  const handle = Object.freeze({}) as WtsExperiencePresentationHandle;
+  manualExperienceHandleIds.set(handle, exposureId);
+  return handle;
+}
+
+function nativeExposureIdForManualHandle(handle: WtsExperiencePresentationHandle): string {
+  const exposureId = manualExperienceHandleIds.get(handle);
+  if (!exposureId) {
+    throw new TypeError("Experience presentation handles must be issued by this SDK instance.");
+  }
+  return exposureId;
+}
+
+function manualPresentationFromNative(
+  presentation: ExperienceManualPresentationResult,
+): WtsExperienceManualPresentation {
+  const { exposureId: _nativeExposureId, ...experience } = presentation.experience;
+  return {
+    experience,
+    handle: manualExperienceHandleFromNative(presentation.handle.exposureId),
+  };
 }
 
 function validateEvent(
@@ -229,6 +278,7 @@ export const WtsSdk = {
           allowedDeepLinkHosts: experiences.allowedDeepLinkHosts ?? [],
           allowedDeepLinkSchemes: experiences.allowedDeepLinkSchemes ?? [],
           allowedWebOrigins: experiences.allowedWebOrigins ?? [],
+          manifestVerificationKeys: experiences.manifestVerificationKeys ?? {},
         },
       ),
     );
@@ -312,6 +362,50 @@ export const WtsSdk = {
       NativeWtsSdk.getExperienceDiagnostics() as Promise<WtsExperienceDiagnostics>,
     );
   },
+  acknowledgeExperienceRender(handle: WtsExperiencePresentationHandle) {
+    return wrapNativePromise(
+      NativeWtsSdk.acknowledgeExperienceRender(nativeExposureIdForManualHandle(handle)),
+    );
+  },
+  acknowledgeExperienceImpression(handle: WtsExperiencePresentationHandle) {
+    return wrapNativePromise(
+      NativeWtsSdk.acknowledgeExperienceImpression(nativeExposureIdForManualHandle(handle)),
+    );
+  },
+  reportExperienceAction(handle: WtsExperiencePresentationHandle, actionId: string) {
+    const normalized = actionId.trim();
+    if (!normalized) throw new TypeError("An Experience action ID is required.");
+    return wrapNativePromise(
+      NativeWtsSdk.reportExperienceAction(nativeExposureIdForManualHandle(handle), normalized),
+    );
+  },
+  dismissExperience(
+    handle: WtsExperiencePresentationHandle,
+    options: {
+      reason?: WtsExperienceDismissReason;
+      failureCode?: string;
+    } = {},
+  ) {
+    return wrapNativePromise(
+      NativeWtsSdk.dismissExperience(
+        nativeExposureIdForManualHandle(handle),
+        options.reason ?? "dismissed",
+        options.failureCode ?? null,
+      ),
+    );
+  },
+  failExperiencePresentation(
+    handle: WtsExperiencePresentationHandle,
+    failureCode: string,
+  ) {
+    return wrapNativePromise(
+      NativeWtsSdk.dismissExperience(
+        nativeExposureIdForManualHandle(handle),
+        "renderFailed",
+        failureCode,
+      ),
+    );
+  },
   joinTestSession(pairing: string) {
     const normalized = pairing.trim();
     if (!normalized) throw new TypeError("A pairing URL, token, or code is required.");
@@ -362,8 +456,12 @@ export const WtsSdk = {
     }
     return wrapNativePromise(NativeWtsSdk.reportTestSessionExperienceInteraction(interaction));
   },
-  onExperienceAvailable(handler: (experience: ExperienceResult) => void | Promise<void>) {
-    return NativeWtsSdk.onExperienceAvailable(handler);
+  onExperienceAvailable(
+    handler: (presentation: WtsExperienceManualPresentation) => void | Promise<void>,
+  ) {
+    return NativeWtsSdk.onExperienceAvailable((presentation) =>
+      handler(manualPresentationFromNative(presentation)),
+    );
   },
   onExperienceAction(handler: (event: ExperienceActionEvent) => void | Promise<void>) {
     return NativeWtsSdk.onExperienceAction(handler);
