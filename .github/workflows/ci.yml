@@ -15,6 +15,7 @@ jobs:
         with: { node-version: '24', cache: npm }
       - run: npm ci
       - run: npm run contracts:verify
+      - run: npm run pins:verify
       - run: npm run typecheck
       - run: npm test -- --runInBand
       - run: npm run build

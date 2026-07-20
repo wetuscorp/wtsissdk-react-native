@@ -4,8 +4,8 @@ import { TurboModuleRegistry } from "react-native";
 export type DeepLinkResult = {
   path: string;
   parameters: Object;
-  linkId: string;
-  attributionId: string;
+  linkId?: string;
+  attributionId?: string;
   isDeferred: boolean;
 };
 
@@ -49,23 +49,9 @@ export type ExperienceResult = {
 };
 
 export type ExperienceActionEvent = {
+  requestId: string;
   experience: ExperienceResult;
   action: ExperienceActionResult;
-};
-
-export type ExperiencePresentationHandleResult = {
-  exposureId: string;
-};
-
-export type ExperienceManualPresentationResult = {
-  experience: ExperienceResult;
-  handle: ExperiencePresentationHandleResult;
-};
-
-export type ExperienceLifecycleOutcomeResult = {
-  accepted: boolean;
-  idempotent: boolean;
-  code?: string;
 };
 
 export type TestSessionCheckResult = {
@@ -122,17 +108,16 @@ export type TestSessionProbeRunResult = {
 };
 
 export interface Spec extends TurboModule {
-  readonly onExperienceAvailable: CodegenTypes.EventEmitter<ExperienceManualPresentationResult>;
   readonly onExperienceAction: CodegenTypes.EventEmitter<ExperienceActionEvent>;
   configure(
     appKey: string,
     apiBaseUrl: string | null,
     collectorBaseUrl: string | null,
-    experienceOptions: Object,
   ): Promise<void>;
   handle(url: string): Promise<DeepLinkResult>;
   getDeferredDeepLink(): Promise<DeepLinkResult | null>;
-  setProfileConsent(granted: boolean): Promise<void>;
+  setConsent(consent: string): Promise<void>;
+  getConsentState(): Promise<string>;
   identify(externalUserId: string, attributes: Object): Promise<void>;
   updateUser(
     set: Object,
@@ -155,27 +140,14 @@ export interface Spec extends TurboModule {
     linkId: string | null,
   ): Promise<void>;
   screen(name: string, properties: Object): Promise<void>;
-  setExperienceConsent(consent: string): Promise<string>;
-  presentNextExperience(): Promise<boolean>;
   dismissCurrentExperience(): Promise<boolean>;
   getExperienceDiagnostics(): Promise<ExperienceDiagnosticsResult>;
-  acknowledgeExperienceRender(exposureId: string): Promise<ExperienceLifecycleOutcomeResult>;
-  acknowledgeExperienceImpression(exposureId: string): Promise<ExperienceLifecycleOutcomeResult>;
-  reportExperienceAction(
-    exposureId: string,
-    actionId: string,
-  ): Promise<ExperienceLifecycleOutcomeResult>;
-  dismissExperience(
-    exposureId: string,
-    reason: string,
-    failureCode: string | null,
-  ): Promise<ExperienceLifecycleOutcomeResult>;
+  completeExperienceAction(requestId: string, handled: boolean): Promise<void>;
   joinTestSession(pairing: string): Promise<TestSessionJoinResult>;
   leaveTestSession(): Promise<boolean>;
   getTestSessionDiagnostics(): Promise<TestSessionDiagnosticsResult>;
   probeTestSessionUrl(url: string): Promise<TestSessionProbeResult>;
   runTestSessionProbes(): Promise<TestSessionProbeRunResult>;
-  reportTestSessionExperienceInteraction(interaction: string): Promise<boolean>;
   flush(): Promise<void>;
 }
 
