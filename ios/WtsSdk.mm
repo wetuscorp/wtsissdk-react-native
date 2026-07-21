@@ -16,11 +16,6 @@ RCT_EXPORT_MODULE()
   if (self) {
     _core = [WtsSdkNativeCore new];
     __weak WtsSdk *weakSelf = self;
-    _core.onExperienceAvailable = ^(NSDictionary *experience) {
-      dispatch_async(dispatch_get_main_queue(), ^{
-        [weakSelf emitOnExperienceAvailable:experience];
-      });
-    };
     _core.onExperienceAction = ^(NSDictionary *payload) {
       dispatch_async(dispatch_get_main_queue(), ^{
         [weakSelf emitOnExperienceAction:payload];
@@ -33,13 +28,11 @@ RCT_EXPORT_MODULE()
 - (void)configure:(NSString *)appKey
        apiBaseUrl:(NSString * _Nullable)apiBaseUrl
   collectorBaseUrl:(NSString * _Nullable)collectorBaseUrl
- experienceOptions:(NSDictionary *)experienceOptions
           resolve:(RCTPromiseResolveBlock)resolve
            reject:(RCTPromiseRejectBlock)reject {
   [_core configure:appKey
          apiBaseUrl:apiBaseUrl
    collectorBaseUrl:collectorBaseUrl
-  experienceOptions:experienceOptions
             resolve:resolve
              reject:reject];
 }
@@ -49,17 +42,6 @@ RCT_EXPORT_MODULE()
        resolve:(RCTPromiseResolveBlock)resolve
         reject:(RCTPromiseRejectBlock)reject {
   [_core screen:name properties:properties resolve:resolve reject:reject];
-}
-
-- (void)setExperienceConsent:(NSString *)consent
-                     resolve:(RCTPromiseResolveBlock)resolve
-                      reject:(RCTPromiseRejectBlock)reject {
-  [_core setExperienceConsent:consent resolve:resolve reject:reject];
-}
-
-- (void)presentNextExperience:(RCTPromiseResolveBlock)resolve
-                       reject:(RCTPromiseRejectBlock)reject {
-  [_core presentNextExperience:resolve reject:reject];
 }
 
 - (void)dismissCurrentExperience:(RCTPromiseResolveBlock)resolve
@@ -72,35 +54,11 @@ RCT_EXPORT_MODULE()
   [_core getExperienceDiagnostics:resolve reject:reject];
 }
 
-- (void)acknowledgeExperienceRender:(NSString *)exposureId
-                             resolve:(RCTPromiseResolveBlock)resolve
-                              reject:(RCTPromiseRejectBlock)reject {
-  [_core acknowledgeExperienceRender:exposureId resolve:resolve reject:reject];
-}
-
-- (void)acknowledgeExperienceImpression:(NSString *)exposureId
-                                 resolve:(RCTPromiseResolveBlock)resolve
-                                  reject:(RCTPromiseRejectBlock)reject {
-  [_core acknowledgeExperienceImpression:exposureId resolve:resolve reject:reject];
-}
-
-- (void)reportExperienceAction:(NSString *)exposureId
-                       actionId:(NSString *)actionId
-                        resolve:(RCTPromiseResolveBlock)resolve
-                         reject:(RCTPromiseRejectBlock)reject {
-  [_core reportExperienceAction:exposureId actionId:actionId resolve:resolve reject:reject];
-}
-
-- (void)dismissExperience:(NSString *)exposureId
-                   reason:(NSString *)reason
-              failureCode:(NSString * _Nullable)failureCode
-                  resolve:(RCTPromiseResolveBlock)resolve
-                   reject:(RCTPromiseRejectBlock)reject {
-  [_core dismissExperience:exposureId
-                    reason:reason
-               failureCode:failureCode
-                   resolve:resolve
-                    reject:reject];
+- (void)completeExperienceAction:(NSString *)requestId
+                         handled:(BOOL)handled
+                         resolve:(RCTPromiseResolveBlock)resolve
+                          reject:(RCTPromiseRejectBlock)reject {
+  [_core completeExperienceAction:requestId handled:handled resolve:resolve reject:reject];
 }
 
 - (void)joinTestSession:(NSString *)pairing
@@ -130,12 +88,6 @@ RCT_EXPORT_MODULE()
   [_core runTestSessionProbes:resolve reject:reject];
 }
 
-- (void)reportTestSessionExperienceInteraction:(NSString *)interaction
-                                       resolve:(RCTPromiseResolveBlock)resolve
-                                        reject:(RCTPromiseRejectBlock)reject {
-  [_core reportTestSessionExperienceInteraction:interaction resolve:resolve reject:reject];
-}
-
 - (void)handle:(NSString *)url
        resolve:(RCTPromiseResolveBlock)resolve
         reject:(RCTPromiseRejectBlock)reject {
@@ -147,10 +99,15 @@ RCT_EXPORT_MODULE()
   [_core getDeferredDeepLink:resolve reject:reject];
 }
 
-- (void)setProfileConsent:(BOOL)granted
+- (void)setConsent:(NSString *)consent
                   resolve:(RCTPromiseResolveBlock)resolve
                    reject:(RCTPromiseRejectBlock)reject {
-  [_core setProfileConsent:granted resolve:resolve reject:reject];
+  [_core setConsent:consent resolve:resolve reject:reject];
+}
+
+- (void)getConsentState:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  [_core getConsentState:resolve reject:reject];
 }
 
 - (void)identify:(NSString *)externalUserId

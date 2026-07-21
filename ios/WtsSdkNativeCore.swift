@@ -4,14 +4,14 @@ import WtsSDK
 
 @objcMembers
 public final class WtsSdkNativeCore: NSObject {
-    public var onExperienceAvailable: (([String: Any]) -> Void)?
     public var onExperienceAction: (([String: Any]) -> Void)?
+    private let experienceActionLock = NSLock()
+    private var pendingExperienceActions: [String: CheckedContinuation<Bool, Never>] = [:]
 
     public func configure(
         _ appKey: String,
         apiBaseUrl: String?,
         collectorBaseUrl: String?,
-        experienceOptions: [String: Any],
         resolve: @escaping RCTPromiseResolveBlock,
         reject: @escaping RCTPromiseRejectBlock
     ) {
@@ -22,40 +22,9 @@ public final class WtsSdkNativeCore: NSObject {
                 if let collectorBaseUrl, let url = URL(string: collectorBaseUrl) {
                     options.collectorBaseURL = url
                 }
-                options.experiences = WtsExperienceOptions(
-                    enabled: experienceOptions["enabled"] as? Bool ?? false,
-                    renderMode: experienceOptions["renderMode"] as? String == "manual"
-                        ? .manual
-                        : .automatic,
-                    manifestVerificationKeys: experienceOptions[
-                        "manifestVerificationKeys"
-                    ] as? [String: String] ?? [:],
-                    allowedInternalRoutes: Set(
-                        experienceOptions["allowedInternalRoutes"] as? [String] ?? []
-                    ),
-                    allowedCallbackKeys: Set(
-                        experienceOptions["allowedCallbackKeys"] as? [String] ?? []
-                    ),
-                    allowedDeepLinkHosts: Set(
-                        experienceOptions["allowedDeepLinkHosts"] as? [String] ?? []
-                    ),
-                    allowedDeepLinkSchemes: Set(
-                        experienceOptions["allowedDeepLinkSchemes"] as? [String] ?? []
-                    ),
-                    allowedWebOrigins: Set(
-                        experienceOptions["allowedWebOrigins"] as? [String] ?? []
-                    )
-                )
                 try await WtsSDK.shared.configure(appKey: appKey, options: options)
-                await WtsSDK.shared.onExperienceAvailable { [weak self] presentation in
-                    self?.onExperienceAvailable?(presentation.dictionary)
-                }
                 await WtsSDK.shared.onExperienceAction { [weak self] experience, action in
-                    self?.onExperienceAction?([
-                        "experience": experience.dictionary,
-                        "action": action.dictionary,
-                    ])
-                    return false
+                    await self?.requestExperienceAction(experience, action: action) ?? false
                 }
                 resolve(nil)
             } catch { rejectWts(error, reject) }
@@ -82,17 +51,28 @@ public final class WtsSdkNativeCore: NSObject {
         Task { resolve(await WtsSDK.shared.getDeferredDeepLink()?.dictionary) }
     }
 
-    public func setProfileConsent(
-        _ granted: Bool,
+    public func setConsent(
+        _ consent: String,
         resolve: @escaping RCTPromiseResolveBlock,
         reject: @escaping RCTPromiseRejectBlock
     ) {
         Task {
             do {
-                try await WtsSDK.shared.setProfileConsent(granted ? .granted : .denied)
+                guard let value = WtsConsentState(rawValue: consent) else {
+                    throw WtsSDKError.invalidEvent(reason: "Invalid consent state.")
+                }
+                try await WtsSDK.shared.setConsent(value)
+                if value == .denied { self.resolveAllExperienceActions(handled: false) }
                 resolve(nil)
             } catch { rejectWts(error, reject) }
         }
+    }
+
+    public func getConsentState(
+        _ resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        Task { resolve(await WtsSDK.shared.getConsentState().rawValue) }
     }
 
     public func identify(
@@ -209,29 +189,6 @@ public final class WtsSdkNativeCore: NSObject {
         }
     }
 
-    public func setExperienceConsent(
-        _ consent: String,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
-    ) {
-        Task {
-            do {
-                guard let value = WtsExperienceConsent(rawValue: consent) else {
-                    throw WtsSDKError.invalidEvent(reason: "Invalid experience consent.")
-                }
-                let result = try await WtsSDK.shared.setExperienceConsent(value)
-                resolve(String(describing: result))
-            } catch { rejectWts(error, reject) }
-        }
-    }
-
-    public func presentNextExperience(
-        _ resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
-    ) {
-        Task { resolve(await WtsSDK.shared.presentNextExperience() != nil) }
-    }
-
     public func dismissCurrentExperience(
         _ resolve: @escaping RCTPromiseResolveBlock,
         reject: @escaping RCTPromiseRejectBlock
@@ -259,72 +216,14 @@ public final class WtsSdkNativeCore: NSObject {
         }
     }
 
-    public func acknowledgeExperienceRender(
-        _ exposureId: String,
+    public func completeExperienceAction(
+        _ requestId: String,
+        handled: Bool,
         resolve: @escaping RCTPromiseResolveBlock,
         reject: @escaping RCTPromiseRejectBlock
     ) {
-        Task {
-            let handle = WtsExperiencePresentationHandle(exposureId: exposureId)
-            resolve(await WtsSDK.shared.acknowledgeExperienceRender(handle).dictionary)
-        }
-    }
-
-    public func acknowledgeExperienceImpression(
-        _ exposureId: String,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
-    ) {
-        Task {
-            let handle = WtsExperiencePresentationHandle(exposureId: exposureId)
-            resolve(await WtsSDK.shared.acknowledgeExperienceImpression(handle).dictionary)
-        }
-    }
-
-    public func reportExperienceAction(
-        _ exposureId: String,
-        actionId: String,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
-    ) {
-        Task {
-            let handle = WtsExperiencePresentationHandle(exposureId: exposureId)
-            resolve(
-                await WtsSDK.shared.reportExperienceAction(handle, actionId: actionId).dictionary
-            )
-        }
-    }
-
-    public func dismissExperience(
-        _ exposureId: String,
-        reason: String,
-        failureCode: String?,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
-    ) {
-        let parsedReason: WtsExperienceDismissReason
-        switch reason {
-        case "dismissed": parsedReason = .dismissed
-        case "autoClosed": parsedReason = .autoClosed
-        case "renderFailed": parsedReason = .renderFailed
-        default:
-            reject(
-                "INVALID_EXPERIENCE_DISMISSAL_REASON",
-                "Unsupported Experience dismissal reason.",
-                nil
-            )
-            return
-        }
-        Task {
-            let handle = WtsExperiencePresentationHandle(exposureId: exposureId)
-            resolve(
-                await WtsSDK.shared.dismissExperience(
-                    handle,
-                    reason: parsedReason,
-                    failureCode: failureCode
-                ).dictionary
-            )
-        }
+        resolveExperienceAction(requestId, handled: handled)
+        resolve(nil)
     }
 
     public func joinTestSession(
@@ -382,21 +281,41 @@ public final class WtsSdkNativeCore: NSObject {
         }
     }
 
-    public func reportTestSessionExperienceInteraction(
-        _ interaction: String,
-        resolve: @escaping RCTPromiseResolveBlock,
-        reject: @escaping RCTPromiseRejectBlock
-    ) {
-        Task {
-            let parsed: WtsTestSessionExperienceInteraction? = interaction == "impression"
-                ? .impression
-                : interaction == "action" ? .action : nil
-            guard let value = parsed else {
-                reject("INVALID_TEST_EXPERIENCE_INTERACTION", "Unsupported test Experience interaction.", nil)
-                return
+    private func requestExperienceAction(
+        _ experience: WtsExperience,
+        action: WtsExperienceAction
+    ) async -> Bool {
+        guard let onExperienceAction else { return false }
+        let requestId = UUID().uuidString.lowercased()
+        return await withCheckedContinuation { continuation in
+            experienceActionLock.lock()
+            pendingExperienceActions[requestId] = continuation
+            experienceActionLock.unlock()
+            onExperienceAction([
+                "requestId": requestId,
+                "experience": experience.dictionary,
+                "action": action.dictionary,
+            ])
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                self?.resolveExperienceAction(requestId, handled: false)
             }
-            resolve(await WtsSDK.shared.reportTestSessionExperienceInteraction(value))
         }
+    }
+
+    private func resolveExperienceAction(_ requestId: String, handled: Bool) {
+        experienceActionLock.lock()
+        let continuation = pendingExperienceActions.removeValue(forKey: requestId)
+        experienceActionLock.unlock()
+        continuation?.resume(returning: handled)
+    }
+
+    private func resolveAllExperienceActions(handled: Bool) {
+        experienceActionLock.lock()
+        let continuations = Array(pendingExperienceActions.values)
+        pendingExperienceActions.removeAll()
+        experienceActionLock.unlock()
+        continuations.forEach { $0.resume(returning: handled) }
     }
 
     public func flush(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
@@ -414,13 +333,14 @@ private func rejectWts(_ error: Error, _ reject: RCTPromiseRejectBlock) {
 
 private extension WtsDeepLink {
     var dictionary: [String: Any] {
-        [
+        var result: [String: Any] = [
             "path": path,
             "parameters": parameters.mapValues(\.foundationValue),
-            "linkId": linkId,
-            "attributionId": attributionId,
             "isDeferred": isDeferred,
         ]
+        if let linkId { result["linkId"] = linkId }
+        if let attributionId { result["attributionId"] = attributionId }
+        return result
     }
 }
 
@@ -458,25 +378,6 @@ private extension WtsExperience {
             result["assetUrl"] = assetURL.absoluteString
         }
         return result
-    }
-}
-
-private extension WtsExperienceManualPresentation {
-    var dictionary: [String: Any] {
-        [
-            "experience": experience.dictionary,
-            "handle": ["exposureId": handle.exposureId],
-        ]
-    }
-}
-
-private extension WtsExperienceLifecycleOutcome {
-    var dictionary: [String: Any] {
-        [
-            "accepted": accepted,
-            "idempotent": idempotent,
-            "code": code as Any,
-        ]
     }
 }
 
@@ -593,7 +494,7 @@ private extension WtsTestSessionExperienceDecision {
                             "content": variant.content.foundationValue,
                             "asset": variant.assetURL.map { ["url": $0.absoluteString] } ?? NSNull(),
                         ]
-                    } ?? NSNull(),
+                    } ?? NSNull() as Any,
                 ]
             } ?? NSNull(),
         ]

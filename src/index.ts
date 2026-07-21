@@ -3,8 +3,6 @@ import NativeWtsSdk, {
   type ExperienceActionEvent,
   type ExperienceActionResult,
   type ExperienceDiagnosticsResult,
-  type ExperienceLifecycleOutcomeResult,
-  type ExperienceManualPresentationResult,
   type ExperienceResult,
   type ExperienceTranslationResult,
   type TestSessionCheckResult,
@@ -18,13 +16,14 @@ export type {
   DeepLinkResult,
   ExperienceActionEvent,
   ExperienceActionResult,
-  ExperienceLifecycleOutcomeResult,
   ExperienceResult,
   ExperienceTranslationResult,
   TestSessionCheckResult,
 };
+
 export type WtsScalar = string | number | boolean;
 export type WtsRevenue = { amount: string; currency: string };
+export type WtsConsentState = "pending" | "granted" | "denied";
 export type WtsUserValue = WtsScalar | string[] | Date;
 export type WtsUserUpdate = {
   set?: Record<string, WtsUserValue>;
@@ -38,45 +37,18 @@ export type WtsReportedAttribution = {
   campaign?: string;
   externalRef?: string;
 };
-export type WtsExperienceConsent = "pending" | "contextual" | "personalized" | "denied";
-export type WtsExperienceRenderMode = "automatic" | "manual";
-export type WtsExperienceOptions = {
-  enabled?: boolean;
-  renderMode?: WtsExperienceRenderMode;
-  allowedInternalRoutes?: string[];
-  allowedCallbackKeys?: string[];
-  allowedDeepLinkHosts?: string[];
-  allowedDeepLinkSchemes?: string[];
-  allowedWebOrigins?: string[];
-  /** `kid` → base64 SPKI DER Ed25519 public key. */
-  manifestVerificationKeys?: Record<string, string>;
-};
 export type WtsConfigureOptions = {
   apiBaseUrl?: string;
   collectorBaseUrl?: string;
-  experiences?: WtsExperienceOptions;
 };
-export type WtsExperienceDiagnostics = ExperienceDiagnosticsResult & {
-  consent: WtsExperienceConsent;
+export type WtsExperienceDiagnostics = Omit<ExperienceDiagnosticsResult, "consent"> & {
+  consent: WtsConsentState;
 };
-declare const wtsExperiencePresentationHandleBrand: unique symbol;
-
-/**
- * An opaque, SDK-issued handle for a manual Experience presentation.
- *
- * The handle intentionally exposes no delivery identifier. Keep it only for
- * the lifecycle of its presentation and pass it back to the SDK methods below.
- */
-export type WtsExperiencePresentationHandle = Readonly<{
-  [wtsExperiencePresentationHandleBrand]: never;
-}>;
-export type WtsExperienceManualContent = ExperienceResult;
-export type WtsExperienceManualPresentation = {
-  experience: WtsExperienceManualContent;
-  handle: WtsExperiencePresentationHandle;
-};
-export type WtsExperienceLifecycleOutcome = ExperienceLifecycleOutcomeResult;
-export type WtsExperienceDismissReason = "dismissed" | "autoClosed" | "renderFailed";
+export type WtsExperienceActionHandler = (
+  experience: ExperienceResult,
+  action: ExperienceActionResult,
+) => boolean | Promise<boolean>;
+export type WtsSubscription = { remove(): void };
 export type WtsTestSessionJoin = TestSessionJoinResult;
 export type WtsTestSessionDiagnostics = TestSessionDiagnosticsResult;
 export type WtsTestSessionProbeLink = {
@@ -124,41 +96,7 @@ function wrapNativePromise<T>(promise: Promise<T>, fallbackUrl?: string): Promis
   });
 }
 
-const manualExperienceHandleIds = new WeakMap<object, string>();
-
-function manualExperienceHandleFromNative(exposureId: string): WtsExperiencePresentationHandle {
-  const handle = Object.freeze({}) as WtsExperiencePresentationHandle;
-  manualExperienceHandleIds.set(handle, exposureId);
-  return handle;
-}
-
-function nativeExposureIdForManualHandle(handle: WtsExperiencePresentationHandle): string {
-  const exposureId = manualExperienceHandleIds.get(handle);
-  if (!exposureId) {
-    throw new TypeError("Experience presentation handles must be issued by this SDK instance.");
-  }
-  return exposureId;
-}
-
-function manualPresentationFromNative(
-  presentation: ExperienceManualPresentationResult,
-): WtsExperienceManualPresentation {
-  const { exposureId: _nativeExposureId, ...experience } = presentation.experience as
-    ExperienceResult & { exposureId?: unknown };
-  return {
-    experience,
-    handle: manualExperienceHandleFromNative(presentation.handle.exposureId),
-  };
-}
-
-function validateEvent(
-  eventKey: string,
-  properties: Record<string, WtsScalar>,
-  revenue?: WtsRevenue,
-) {
-  if (!/^[a-z][a-z0-9_]{1,63}$/.test(eventKey)) {
-    throw new TypeError("eventKey must use lowercase snake_case.");
-  }
+function validateEventProperties(properties: Record<string, WtsScalar>) {
   if (Object.keys(properties).length > 20) {
     throw new TypeError("Events support at most 20 properties.");
   }
@@ -169,7 +107,21 @@ function validateEvent(
     if (typeof value === "string" && value.length > 512) {
       throw new TypeError("String event properties cannot exceed 512 characters.");
     }
+    if (typeof value === "number" && !Number.isFinite(value)) {
+      throw new TypeError("Number event properties must be finite.");
+    }
   }
+}
+
+function validateEvent(
+  eventKey: string,
+  properties: Record<string, WtsScalar>,
+  revenue?: WtsRevenue,
+) {
+  if (!/^[a-z][a-z0-9_]{1,63}$/.test(eventKey)) {
+    throw new TypeError("eventKey must use lowercase snake_case.");
+  }
+  validateEventProperties(properties);
   if (revenue) {
     if (!/^-?\d{1,12}(?:\.\d{1,6})?$/.test(revenue.amount)) {
       throw new TypeError("Revenue amount must be a decimal string.");
@@ -191,36 +143,20 @@ function normalizeAttributes(
       if (!/^[a-z][a-z0-9_]{0,63}$/.test(key)) {
         throw new TypeError("Attribute keys must use lowercase snake_case.");
       }
-      if (value instanceof Date) {
-        return [key, { kind: "date", value: value.toISOString() }];
-      }
+      if (value instanceof Date) return [key, { kind: "date", value: value.toISOString() }];
       if (Array.isArray(value)) {
-        if (value.length > 50 || value.some((item) => typeof item !== "string" || item.length > 512)) {
+        if (value.length > 50 || value.some((item) => item.length > 512)) {
           throw new TypeError("String-array attributes support 50 values of at most 512 characters.");
         }
         return [key, { kind: "string_array", value }];
       }
-      if (!["string", "number", "boolean"].includes(typeof value)) {
-        throw new TypeError("User attributes must be string, number, boolean, Date, or string[].");
+      if (typeof value === "number" && !Number.isFinite(value)) {
+        throw new TypeError("Number user attributes must be finite.");
       }
       if (typeof value === "string" && value.length > 2_048) {
         throw new TypeError("String user attributes cannot exceed 2048 characters.");
       }
-      if (typeof value === "number" && !Number.isFinite(value)) {
-        throw new TypeError("Number user attributes must be finite.");
-      }
-      return [
-        key,
-        {
-          kind:
-            typeof value === "string"
-              ? "string"
-              : typeof value === "number"
-                ? "number"
-                : "boolean",
-          value,
-        },
-      ];
+      return [key, { kind: typeof value, value }];
     }),
   );
 }
@@ -262,25 +198,37 @@ function optionalJsonObject(value: unknown): Record<string, unknown> | undefined
     : undefined;
 }
 
+const experienceActionHandlers = new Set<WtsExperienceActionHandler>();
+let experienceActionBridgeConfigured = false;
+
+function ensureExperienceActionBridge() {
+  if (experienceActionBridgeConfigured) return;
+  experienceActionBridgeConfigured = true;
+  NativeWtsSdk.onExperienceAction(async ({ requestId, experience, action }) => {
+    let handled = false;
+    for (const handler of [...experienceActionHandlers]) {
+      try {
+        if (await handler(experience, action)) {
+          handled = true;
+          break;
+        }
+      } catch {
+        // A throwing host handler is unhandled by contract.
+      }
+    }
+    await NativeWtsSdk.completeExperienceAction(requestId, handled).catch(() => undefined);
+  });
+}
+
 export const WtsSdk = {
   configure(appKey: string, options: WtsConfigureOptions = {}) {
     if (appKey.trim().length < 8) throw new TypeError("The wts.is app key is invalid.");
-    const experiences = options.experiences ?? {};
+    ensureExperienceActionBridge();
     return wrapNativePromise(
       NativeWtsSdk.configure(
         appKey.trim(),
         options.apiBaseUrl ?? null,
         options.collectorBaseUrl ?? null,
-        {
-          enabled: experiences.enabled ?? false,
-          renderMode: experiences.renderMode ?? "automatic",
-          allowedInternalRoutes: experiences.allowedInternalRoutes ?? [],
-          allowedCallbackKeys: experiences.allowedCallbackKeys ?? [],
-          allowedDeepLinkHosts: experiences.allowedDeepLinkHosts ?? [],
-          allowedDeepLinkSchemes: experiences.allowedDeepLinkSchemes ?? [],
-          allowedWebOrigins: experiences.allowedWebOrigins ?? [],
-          manifestVerificationKeys: experiences.manifestVerificationKeys ?? {},
-        },
       ),
     );
   },
@@ -290,16 +238,24 @@ export const WtsSdk = {
   getDeferredDeepLink() {
     return wrapNativePromise(NativeWtsSdk.getDeferredDeepLink());
   },
-  setProfileConsent(granted: boolean) {
-    return wrapNativePromise(NativeWtsSdk.setProfileConsent(granted));
+  setConsent(consent: WtsConsentState) {
+    if (consent === "pending") {
+      throw new TypeError("setConsent accepts only granted or denied.");
+    }
+    return wrapNativePromise(NativeWtsSdk.setConsent(consent));
+  },
+  async getConsentState(): Promise<WtsConsentState> {
+    const state = await wrapNativePromise(NativeWtsSdk.getConsentState());
+    if (state !== "pending" && state !== "granted" && state !== "denied") {
+      throw new WtsSdkError("INVALID_RESPONSE", "Native SDK returned an invalid consent state.");
+    }
+    return state;
   },
   identify(externalUserId: string, attributes: Record<string, WtsUserValue> = {}) {
     if (externalUserId.length < 1 || externalUserId.length > 128) {
       throw new TypeError("externalUserId must contain 1 to 128 characters.");
     }
-    return wrapNativePromise(
-      NativeWtsSdk.identify(externalUserId, normalizeAttributes(attributes)),
-    );
+    return wrapNativePromise(NativeWtsSdk.identify(externalUserId, normalizeAttributes(attributes)));
   },
   updateUser(update: WtsUserUpdate) {
     const value = validateUserUpdate(update);
@@ -349,63 +305,17 @@ export const WtsSdk = {
     validateEventProperties(properties);
     return wrapNativePromise(NativeWtsSdk.screen(normalized, properties));
   },
-  setExperienceConsent(consent: WtsExperienceConsent) {
-    return wrapNativePromise(NativeWtsSdk.setExperienceConsent(consent));
-  },
-  presentNextExperience() {
-    return wrapNativePromise(NativeWtsSdk.presentNextExperience());
-  },
   dismissCurrentExperience() {
     return wrapNativePromise(NativeWtsSdk.dismissCurrentExperience());
   },
-  getExperienceDiagnostics() {
-    return wrapNativePromise(
-      NativeWtsSdk.getExperienceDiagnostics() as Promise<WtsExperienceDiagnostics>,
-    );
+  async getExperienceDiagnostics(): Promise<WtsExperienceDiagnostics> {
+    const value = await wrapNativePromise(NativeWtsSdk.getExperienceDiagnostics());
+    return { ...value, consent: value.consent as WtsConsentState };
   },
-  acknowledgeExperienceRender(handle: WtsExperiencePresentationHandle) {
-    return wrapNativePromise(
-      NativeWtsSdk.acknowledgeExperienceRender(nativeExposureIdForManualHandle(handle)),
-    );
-  },
-  acknowledgeExperienceImpression(handle: WtsExperiencePresentationHandle) {
-    return wrapNativePromise(
-      NativeWtsSdk.acknowledgeExperienceImpression(nativeExposureIdForManualHandle(handle)),
-    );
-  },
-  reportExperienceAction(handle: WtsExperiencePresentationHandle, actionId: string) {
-    const normalized = actionId.trim();
-    if (!normalized) throw new TypeError("An Experience action ID is required.");
-    return wrapNativePromise(
-      NativeWtsSdk.reportExperienceAction(nativeExposureIdForManualHandle(handle), normalized),
-    );
-  },
-  dismissExperience(
-    handle: WtsExperiencePresentationHandle,
-    options: {
-      reason?: WtsExperienceDismissReason;
-      failureCode?: string;
-    } = {},
-  ) {
-    return wrapNativePromise(
-      NativeWtsSdk.dismissExperience(
-        nativeExposureIdForManualHandle(handle),
-        options.reason ?? "dismissed",
-        options.failureCode ?? null,
-      ),
-    );
-  },
-  failExperiencePresentation(
-    handle: WtsExperiencePresentationHandle,
-    failureCode: string,
-  ) {
-    return wrapNativePromise(
-      NativeWtsSdk.dismissExperience(
-        nativeExposureIdForManualHandle(handle),
-        "renderFailed",
-        failureCode,
-      ),
-    );
+  onExperienceAction(handler: WtsExperienceActionHandler): WtsSubscription {
+    ensureExperienceActionBridge();
+    experienceActionHandlers.add(handler);
+    return { remove: () => experienceActionHandlers.delete(handler) };
   },
   joinTestSession(pairing: string) {
     const normalized = pairing.trim();
@@ -451,31 +361,7 @@ export const WtsSdk = {
         : undefined,
     };
   },
-  reportTestSessionExperienceInteraction(interaction: "impression" | "action") {
-    if (interaction !== "impression" && interaction !== "action") {
-      throw new TypeError("Test Experience interactions must be impression or action.");
-    }
-    return wrapNativePromise(NativeWtsSdk.reportTestSessionExperienceInteraction(interaction));
-  },
-  onExperienceAvailable(
-    handler: (presentation: WtsExperienceManualPresentation) => void | Promise<void>,
-  ) {
-    return NativeWtsSdk.onExperienceAvailable((presentation) =>
-      handler(manualPresentationFromNative(presentation)),
-    );
-  },
-  onExperienceAction(handler: (event: ExperienceActionEvent) => void | Promise<void>) {
-    return NativeWtsSdk.onExperienceAction(({ experience, action }) => {
-      const { exposureId: _nativeExposureId, ...safeExperience } = experience as
-        ExperienceResult & { exposureId?: unknown };
-      return handler({ experience: safeExperience, action });
-    });
-  },
   flush() {
     return wrapNativePromise(NativeWtsSdk.flush());
   },
 };
-
-function validateEventProperties(properties: Record<string, WtsScalar>) {
-  validateEvent("screen_view", properties);
-}

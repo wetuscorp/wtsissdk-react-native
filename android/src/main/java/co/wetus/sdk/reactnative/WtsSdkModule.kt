@@ -1,25 +1,17 @@
 package co.wetus.sdk.reactnative
 
 import android.net.Uri
+import co.wetus.sdk.WtsConsentState
 import co.wetus.sdk.WtsDeepLink
-import co.wetus.sdk.WtsExperienceConsent
 import co.wetus.sdk.WtsExperience
 import co.wetus.sdk.WtsExperienceAction
-import co.wetus.sdk.WtsExperienceDismissReason
-import co.wetus.sdk.WtsExperienceLifecycleOutcome
-import co.wetus.sdk.WtsExperienceManualPresentation
-import co.wetus.sdk.WtsExperienceOptions
-import co.wetus.sdk.WtsExperiencePresentationHandle
-import co.wetus.sdk.WtsExperienceRenderMode
 import co.wetus.sdk.WtsOptions
-import co.wetus.sdk.WtsProfileConsent
 import co.wetus.sdk.WtsRevenue
 import co.wetus.sdk.WtsReportedAttribution
 import co.wetus.sdk.WtsSdk
 import co.wetus.sdk.WtsSdkFamily
 import co.wetus.sdk.WtsSdkException
 import co.wetus.sdk.WtsTestSessionExperienceDecision
-import co.wetus.sdk.WtsTestSessionExperienceInteraction
 import co.wetus.sdk.WtsTestSessionPairing
 import co.wetus.sdk.WtsTestSessionProbeLink
 import co.wetus.sdk.WtsTestSessionProbeResult
@@ -37,16 +29,22 @@ import com.facebook.react.bridge.WritableNativeMap
 import com.facebook.react.bridge.WritableNativeArray
 import com.facebook.react.module.annotations.ReactModule
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 @ReactModule(name = WtsSdkModule.NAME)
 class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val pendingExperienceActions = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
 
     override fun getName() = NAME
 
@@ -54,48 +52,35 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
         appKey: String,
         apiBaseUrl: String?,
         collectorBaseUrl: String?,
-        experienceOptions: ReadableMap,
         promise: Promise,
     ) {
         runCatching {
-            val raw = experienceOptions.toHashMap()
             val sdk = WtsSdk.configure(
                 reactApplicationContext,
                 appKey,
                 WtsOptions(
                     apiBaseUrl = apiBaseUrl ?: "https://api.wts.is/api/v1",
                     collectorBaseUrl = collectorBaseUrl ?: "https://collect.wts.is",
-                    experiences = WtsExperienceOptions(
-                        enabled = raw["enabled"] as? Boolean ?: false,
-                        renderMode = if (raw["renderMode"] == "manual") {
-                            WtsExperienceRenderMode.MANUAL
-                        } else {
-                            WtsExperienceRenderMode.AUTOMATIC
-                        },
-                        allowedInternalRoutes = raw.stringSet("allowedInternalRoutes"),
-                        allowedCallbackKeys = raw.stringSet("allowedCallbackKeys"),
-                        allowedDeepLinkHosts = raw.stringSet("allowedDeepLinkHosts"),
-                        allowedDeepLinkSchemes = raw.stringSet("allowedDeepLinkSchemes"),
-                        allowedWebOrigins = raw.stringSet("allowedWebOrigins"),
-                        manifestVerificationKeys = raw.stringMap("manifestVerificationKeys"),
-                    ),
                 ),
             )
-            sdk.onExperienceAvailable { presentation ->
-                scope.launch {
-                    emitOnExperienceAvailable(presentation.toWritableMap())
-                }
-            }
             sdk.onExperienceAction { experience, action ->
-                scope.launch {
+                val requestId = UUID.randomUUID().toString().lowercase()
+                val completion = CompletableDeferred<Boolean>()
+                pendingExperienceActions[requestId] = completion
+                withContext(Dispatchers.Main.immediate) {
                     emitOnExperienceAction(
                         WritableNativeMap().apply {
+                            putString("requestId", requestId)
                             putMap("experience", experience.toWritableMap())
                             putMap("action", action.toWritableMap())
                         },
                     )
                 }
-                false
+                try {
+                    withTimeoutOrNull(5_000) { completion.await() } ?: false
+                } finally {
+                    pendingExperienceActions.remove(requestId, completion)
+                }
             }
         }.fold({ promise.resolve(null) }, { promise.reject(it.wtsCode(), it) })
     }
@@ -108,12 +93,19 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
         WtsSdk.shared().getDeferredDeepLink()?.toWritableMap()
     }
 
-    override fun setProfileConsent(granted: Boolean, promise: Promise) {
-        runCatching {
-            WtsSdk.shared().setProfileConsent(
-                if (granted) WtsProfileConsent.GRANTED else WtsProfileConsent.DENIED,
-            )
-        }.fold({ promise.resolve(null) }, { promise.reject(it.wtsCode(), it) })
+    override fun setConsent(consent: String, promise: Promise) = launch(promise) {
+        val value = WtsConsentState.valueOf(consent.uppercase())
+        WtsSdk.shared().setConsent(value)
+        if (value == WtsConsentState.DENIED) {
+            pendingExperienceActions.values.forEach { it.complete(false) }
+            pendingExperienceActions.clear()
+        }
+        null
+    }
+
+    override fun getConsentState(promise: Promise) {
+        runCatching { WtsSdk.shared().getConsentState().name.lowercase() }
+            .fold(promise::resolve) { promise.reject(it.wtsCode(), it) }
     }
 
     override fun identify(
@@ -195,17 +187,6 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
         null
     }
 
-    override fun setExperienceConsent(consent: String, promise: Promise) = launch(promise) {
-        WtsSdk.shared().setExperienceConsent(
-            WtsExperienceConsent.valueOf(consent.uppercase()),
-        ).name.lowercase()
-    }
-
-    override fun presentNextExperience(promise: Promise) {
-        runCatching { WtsSdk.shared().presentNextExperience() }
-            .fold(promise::resolve) { promise.reject(it.wtsCode(), it) }
-    }
-
     override fun dismissCurrentExperience(promise: Promise) {
         runCatching { WtsSdk.shared().dismissCurrentExperience() }
             .fold(promise::resolve) { promise.reject(it.wtsCode(), it) }
@@ -227,40 +208,13 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
         }.fold(promise::resolve) { promise.reject(it.wtsCode(), it) }
     }
 
-    override fun acknowledgeExperienceRender(exposureId: String, promise: Promise) = launch(promise) {
-        WtsSdk.shared().acknowledgeExperienceRender(
-            WtsExperiencePresentationHandle.fromExposureId(exposureId),
-        ).toWritableMap()
-    }
-
-    override fun acknowledgeExperienceImpression(exposureId: String, promise: Promise) = launch(promise) {
-        WtsSdk.shared().acknowledgeExperienceImpression(
-            WtsExperiencePresentationHandle.fromExposureId(exposureId),
-        ).toWritableMap()
-    }
-
-    override fun reportExperienceAction(
-        exposureId: String,
-        actionId: String,
+    override fun completeExperienceAction(
+        requestId: String,
+        handled: Boolean,
         promise: Promise,
-    ) = launch(promise) {
-        WtsSdk.shared().reportExperienceAction(
-            WtsExperiencePresentationHandle.fromExposureId(exposureId),
-            actionId,
-        ).toWritableMap()
-    }
-
-    override fun dismissExperience(
-        exposureId: String,
-        reason: String,
-        failureCode: String?,
-        promise: Promise,
-    ) = launch(promise) {
-        WtsSdk.shared().dismissExperience(
-            WtsExperiencePresentationHandle.fromExposureId(exposureId),
-            reason.toExperienceDismissReason(),
-            failureCode,
-        ).toWritableMap()
+    ) {
+        pendingExperienceActions.remove(requestId)?.complete(handled)
+        promise.resolve(null)
     }
 
     override fun joinTestSession(pairing: String, promise: Promise) = launch(promise) {
@@ -285,18 +239,6 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
 
     override fun runTestSessionProbes(promise: Promise) = launch(promise) {
         WtsSdk.shared().runTestSessionProbes().toWritableMap()
-    }
-
-    override fun reportTestSessionExperienceInteraction(
-        interaction: String,
-        promise: Promise,
-    ) = launch(promise) {
-        val value = when (interaction) {
-            "impression" -> WtsTestSessionExperienceInteraction.IMPRESSION
-            "action" -> WtsTestSessionExperienceInteraction.ACTION
-            else -> throw IllegalArgumentException("Unsupported test Experience interaction.")
-        }
-        WtsSdk.shared().reportTestSessionExperienceInteraction(value)
     }
 
     override fun flush(promise: Promise) = launch(promise) {
@@ -384,26 +326,6 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
         putDouble("delaySeconds", content.delaySeconds)
         content.autoCloseSeconds?.let { putDouble("autoCloseSeconds", it) }
         assetUrl?.let { putString("assetUrl", it) }
-    }
-
-    private fun WtsExperienceManualPresentation.toWritableMap() = WritableNativeMap().apply {
-        putMap("experience", experience.toWritableMap())
-        putMap("handle", WritableNativeMap().apply {
-            putString("exposureId", handle.exposureId)
-        })
-    }
-
-    private fun WtsExperienceLifecycleOutcome.toWritableMap() = WritableNativeMap().apply {
-        putBoolean("accepted", accepted)
-        putBoolean("idempotent", idempotent)
-        code?.let { putString("code", it) } ?: putNull("code")
-    }
-
-    private fun String.toExperienceDismissReason(): WtsExperienceDismissReason = when (this) {
-        "dismissed" -> WtsExperienceDismissReason.DISMISSED
-        "autoClosed" -> WtsExperienceDismissReason.AUTO_CLOSED
-        "renderFailed" -> WtsExperienceDismissReason.RENDER_FAILED
-        else -> throw IllegalArgumentException("Unsupported Experience dismissal reason.")
     }
 
     private fun WtsExperienceAction.toWritableMap() = WritableNativeMap().apply {
@@ -526,17 +448,3 @@ class WtsSdkModule(context: ReactApplicationContext) : NativeWtsSdkSpec(context)
 
 private fun Throwable.wtsCode(): String =
     (this as? WtsSdkException)?.code ?: "NATIVE_ERROR"
-
-private fun Map<String, Any?>.stringSet(key: String): Set<String> =
-    (this[key] as? List<*>)?.mapNotNull { it as? String }?.toSet() ?: emptySet()
-
-private fun Map<String, Any?>.stringMap(key: String): Map<String, String> =
-    (this[key] as? Map<*, *>)
-        ?.mapNotNull { (entryKey, value) ->
-            val normalizedKey = entryKey as? String
-            val normalizedValue = value as? String
-            if (normalizedKey == null || normalizedValue == null) null
-            else normalizedKey to normalizedValue
-        }
-        ?.toMap()
-        ?: emptyMap()

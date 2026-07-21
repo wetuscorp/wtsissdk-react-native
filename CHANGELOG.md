@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0-alpha.1
+
+- Replaced separate analytics/profile/Experience decisions with persisted
+  `pending | granted | denied` unified consent and denial cleanup.
+- Upgraded to Mobile Protocol V4, Experiences V2, and SDK Test Session V2.
+- Made signed, source-bound Experience configuration and automatic native
+  rendering the only delivery path; campaign keys and manual lifecycle APIs
+  were removed.
+- Added handled/unhandled results for advanced Experience actions. Unhandled
+  actions keep the Experience open.
+- Pinned both native cores exactly to `0.5.0-alpha.1`.
+
 ## 0.4.0-alpha.1
 
 - Pins Android `co.wetus:wts-sdk:0.4.0-alpha.1` and iOS `WtsSDK
